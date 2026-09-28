@@ -12,6 +12,10 @@
  *   QUOTA_STORE            "firestore" (default in production) or "memory" (local only)
  *   INTELLIGENCE_PAUSED    "1" pauses all intelligence requests (circuit breaker)
  *   TURNSTILE_SECRET / TURNSTILE_SITE_KEY   optional challenge escalation
+ *   DIAGNOSTICS            "1" injects the mobile diagnostics panel (staging only)
+ *   ACCEPTANCE_TEST_LIMIT  staging only: raises the per-visitor request limit for a
+ *                          physical acceptance run; refused unless DIAGNOSTICS=1 and
+ *                          PUBLIC_ORIGIN is a *.run.app host (see acceptance.js)
  * Credentials come from the Cloud Run service identity through ADC; nothing is read
  * from files and nothing is ever sent to the browser. */
 import { fileURLToPath } from "node:url";
@@ -22,6 +26,7 @@ import { createServer } from "../server.js";
 import { files } from "../scripts/release-files.js";
 import { PUBLIC_LIMITS, HOSTED_GUARDS } from "./limits.js";
 import { createHostedLayer } from "./middleware.js";
+import { acceptanceOverride } from "./acceptance.js";
 import { createMemoryStore } from "./quota/memory-store.js";
 import { createFirestoreStore } from "./quota/firestore-store.js";
 
@@ -61,8 +66,14 @@ export async function createHostedServer({ env = process.env, store, services = 
   const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
   const source = { version: pkg.version, files: files.length, bytes: zip.length, license: "MIT" };
   const publicHost = new URL(publicOrigin).host.replace(/\./g, "\\.");
+  // Staging-only acceptance override: honoured only when acceptance.js says so, and
+  // always announced in the log so it can never run unnoticed.
+  const acceptance = acceptanceOverride(env);
+  if (acceptance?.error) process.stdout.write(JSON.stringify({ severity: "ERROR", message: acceptance.error }) + "\n");
+  else if (acceptance) process.stdout.write(JSON.stringify({ severity: "WARNING", message: `ACCEPTANCE_TEST_LIMIT=${acceptance.limit}: per-visitor allowance raised for physical acceptance testing on ${publicOrigin}. Never run the public service this way.` }) + "\n");
+  const limits = acceptance && !acceptance.error ? { limit: acceptance.limit, speechLimit: acceptance.speechLimit } : {};
   // DIAGNOSTICS=1 injects the mobile voice diagnostics panel (staging only).
-  const before = createHostedLayer({ store, secret, publicOrigin, root, zip, source, diagnostics: env.DIAGNOSTICS === "1", secureCookies: publicOrigin.startsWith("https"), env });
+  const before = createHostedLayer({ store, secret, publicOrigin, root, zip, source, diagnostics: env.DIAGNOSTICS === "1", secureCookies: publicOrigin.startsWith("https"), env, ...limits });
   const server = createServer({
     ...services,
     allowedHosts: new RegExp(`^(${publicHost}|localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?|[a-z0-9-]+\\.[a-z0-9-]+\\.run\\.app)$`, "i"),

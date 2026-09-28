@@ -4,24 +4,23 @@
  *   /health, /robots.txt, /sitemap.xml, /hosted.js, /hosted.css, /api/quota,
  *   /download/<zip>            cheap hosted-only routes answered here
  *   /  and /how-to.html        served with hosted metadata and the hosted script injected
- *   scan POSTs                 visitor identity → circuit breaker → network signals →
+ *   intelligence POSTs         visitor identity → circuit breaker → network signals →
  *                              per-visitor concurrency → 5-per-5-hours reservation →
  *                              refund on failure, headers with remaining allowance
- *   /api/follow-up             the conversation after a scan: circuit breaker, then a
- *                              separate per-visitor follow-up allowance, no credit
+ *                              (identify, document and follow-up all cost one credit)
  *   /api/speech, /api/transcribe   bounded per visitor, never counted as a request
  * Everything else falls through to the normal routes. */
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { reserve, settle, reserveFollowUp, reserveSpeech, status, emptyRecord, formatWait, WINDOW_MS } from "./quota/policy.js";
+import { reserve, settle, reserveSpeech, status, emptyRecord, formatWait, WINDOW_MS, LIMIT, SPEECH_LIMIT } from "./quota/policy.js";
 import { createVisitorIdentity } from "./abuse/visitor.js";
 import { createNetworkSignals } from "./abuse/network.js";
 import { createChallenge } from "./abuse/challenge.js";
 import { createCircuit } from "./cloud/circuit.js";
 import { logEvent, requestType } from "./cloud/logging.js";
 
-const SCANS = new Set(["/api/identify", "/api/document"]);
-const GATED = new Set([...SCANS, "/api/follow-up", "/api/speech", "/api/transcribe"]);
+const INTELLIGENCE = new Set(["/api/identify", "/api/document", "/api/follow-up"]);
+const GATED = new Set([...INTELLIGENCE, "/api/speech", "/api/transcribe"]);
 const ZIP_NAME = "ucenth-vision-intelligence-source.zip";
 const json = (res, status, value) => {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -33,8 +32,6 @@ export const MESSAGES = {
   busy: "One request at a time, please. Wait for the current one to finish.",
   flagged: "Unusual traffic from your network. Please try again later.",
   speech: "Voice is unavailable right now. The written answer is still available.",
-  followUpNoScan: "Scan something first, then ask about it.",
-  followUpExhausted: "The free conversation allowance for this period is used up. Scan again later to continue.",
 };
 
 export function createHostedLayer({
@@ -47,7 +44,11 @@ export function createHostedLayer({
   diagnostics = false,
   secureCookies = true,
   env = process.env,
+  // Public numbers unless production/acceptance.js allowed a staging override.
+  limit = LIMIT,
+  speechLimit = SPEECH_LIMIT,
 } = {}) {
+  const acceptance = limit !== LIMIT;
   const visitors = createVisitorIdentity({ secret, secure: secureCookies });
   const network = createNetworkSignals({ store, secret });
   const challenge = createChallenge({ secret: env.TURNSTILE_SECRET, siteKey: env.TURNSTILE_SITE_KEY });
@@ -77,7 +78,8 @@ export function createHostedLayer({
     const type = requestType(pathname);
     const done = (status, extra = {}) => logEvent({ path: pathname, type, status, ms: Date.now() - started, ...extra });
     if (req.method === "GET" && pathname === "/health") {
-      json(res, 200, { status: "ok" });
+      // The staging override is visible here so it can never run unnoticed.
+      json(res, 200, acceptance ? { status: "ok", acceptanceTest: { limit, speechLimit } } : { status: "ok" });
       return true;
     }
     if (req.method === "GET" && pathname === "/robots.txt") {
@@ -109,7 +111,7 @@ export function createHostedLayer({
     }
     if (req.method === "GET" && pathname === "/api/quota") {
       const visitor = visitors.resolve(req, res);
-      const s = status((await store.get(`visitor:${visitor.id}`)) || emptyRecord());
+      const s = status((await store.get(`visitor:${visitor.id}`)) || emptyRecord(), Date.now(), limit);
       quotaHeaders(res, s);
       json(res, 200, { remaining: s.remaining, limit: s.limit, resetAt: s.resetAt, nextAt: s.nextAt, serverTime: Date.now(), windowHours: WINDOW_MS / 3600000, paused: await circuit.paused(), challenge: challenge.siteKey });
       return true;
@@ -136,7 +138,7 @@ export function createHostedLayer({
     // question; they share one bounded budget and never cost a request credit.
     if (pathname === "/api/speech" || pathname === "/api/transcribe") {
       const ok = await store.update(key, async (current) => {
-        const r = reserveSpeech(current || emptyRecord());
+        const r = reserveSpeech(current || emptyRecord(), Date.now(), speechLimit);
         return { value: r.record, result: r.allowed };
       });
       if (!ok) {
@@ -151,23 +153,6 @@ export function createHostedLayer({
       done(503, { quota: "paused" });
       return true;
     }
-    // A follow-up question continues the scan the visitor already paid for. It draws
-    // on the follow-up allowance instead of a request credit, so a conversation can
-    // run its course while nobody can hold an unlimited chat.
-    if (pathname === "/api/follow-up") {
-      const r = await store.update(key, async (current) => {
-        const d = reserveFollowUp(current || emptyRecord());
-        return { value: d.record, result: d };
-      });
-      if (!r.allowed) {
-        json(res, 429, { error: r.reason === "no-scan" ? MESSAGES.followUpNoScan : MESSAGES.followUpExhausted });
-        done(429, { quota: `follow-up-${r.reason}` });
-        return true;
-      }
-      res.setHeader("X-Follow-Ups-Remaining", String(r.remaining));
-      res.on("finish", () => done(res.statusCode, { quota: res.statusCode < 400 ? "follow-up" : "follow-up-failed", followUpsRemaining: r.remaining }));
-      return false;
-    }
     if (await network.flagged(req)) {
       const token = req.headers["x-challenge-token"];
       if (!(challenge.enabled && (await challenge.verify(token, req.headers["x-forwarded-for"]?.split(",")[0]?.trim())))) {
@@ -178,7 +163,7 @@ export function createHostedLayer({
     }
     const id = randomBytes(8).toString("base64url");
     const decision = await store.update(key, async (current) => {
-      const r = reserve(current || emptyRecord(), id);
+      const r = reserve(current || emptyRecord(), id, Date.now(), limit);
       return { value: r.record, result: r };
     });
     if (!decision.allowed) {

@@ -2,7 +2,8 @@
 // release allowlist: the production layer is UCENTH's operational concern.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reserve, settle, reserveFollowUp, reserveSpeech, status, emptyRecord, formatWait, LIMIT, WINDOW_MS, SPEECH_LIMIT, FOLLOW_UP_LIMIT } from "../production/quota/policy.js";
+import { reserve, settle, reserveSpeech, status, emptyRecord, formatWait, LIMIT, WINDOW_MS, SPEECH_LIMIT } from "../production/quota/policy.js";
+import { acceptanceOverride } from "../production/acceptance.js";
 import { createVisitorIdentity, COOKIE } from "../production/abuse/visitor.js";
 import { createMemoryStore } from "../production/quota/memory-store.js";
 import { createHostedServer } from "../production/server.js";
@@ -40,19 +41,12 @@ test("allowance: five per rolling five hours, refunds on failure, accurate reset
   let s = settle(reserve(emptyRecord(), "q", t0).record, "q", true, t0 + 1);
   for (let i = 0; i < SPEECH_LIMIT; i++) s = reserveSpeech(s, t0 + 2 + i).record;
   assert.equal(reserveSpeech(s, t0 + 100).allowed, false);
-  // Follow-ups continue a scan: no scan, no follow-up; then a separate bounded allowance
-  // that never touches the request credits.
-  assert.equal(reserveFollowUp(emptyRecord(), t0).reason, "no-scan");
-  let f = settle(reserve(emptyRecord(), "scan", t0).record, "scan", true, t0 + 1);
-  for (let i = 0; i < FOLLOW_UP_LIMIT; i++) {
-    const d = reserveFollowUp(f, t0 + 2 + i);
-    assert.equal(d.allowed, true, `follow-up ${i}`);
-    f = d.record;
-  }
-  assert.equal(reserveFollowUp(f, t0 + 100).reason, "exhausted");
-  assert.equal(status(f, t0 + 100).remaining, LIMIT - 1, "follow-ups cost no request credit");
-  assert.equal(status(f, t0 + 100).followUpsRemaining, 0);
-  assert.equal(reserveFollowUp(f, t0 + WINDOW_MS + 3).allowed, false, "the scan left the window too");
+  // The limit is a parameter with the public default, so a staging acceptance run can
+  // use the same algorithm with a larger number.
+  let wide = emptyRecord();
+  for (let i = 0; i < 12; i++) wide = settle(reserve(wide, `w${i}`, t0 + i, 20).record, `w${i}`, true, t0 + i);
+  assert.equal(status(wide, t0 + 20, 20).remaining, 8);
+  assert.equal(reserve(wide, "w12", t0 + 21).reason, "exhausted", "the public default still refuses");
   assert.equal(formatWait(2 * 3600000 + 14 * 60000), "2h 14m");
   assert.equal(formatWait(30000), "1m");
 });
@@ -129,16 +123,8 @@ test("hosted server: health, metadata, download, quota headers, exhaustion, refu
     const body = await denied.json();
     assert.match(body.error, /^Free usage limit reached\. You can use UCENTH Vision Intelligence again in \d+h \d{2}m\.$/);
     assert.ok(body.resetAt > Date.now() + WINDOW_MS - 60000);
-    // The conversation continues after the last credit: follow-ups draw on their own
-    // allowance and cost no credit, so a five-turn conversation always completes.
-    const followUp = await post("/api/follow-up", JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }));
-    assert.equal(followUp.status, 200);
-    assert.equal(followUp.headers.get("x-follow-ups-remaining"), String(FOLLOW_UP_LIMIT - 1));
-    assert.equal((await (await fetch(`${base}/api/quota`, { headers: { Cookie: cookie } })).json()).remaining, 0, "follow-ups never touch the request credits");
-    // A visitor who has not scanned anything cannot open a conversation.
-    const strangerFollowUp = await fetch(`${base}/api/follow-up`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }) });
-    assert.equal(strangerFollowUp.status, 429);
-    assert.match((await strangerFollowUp.json()).error, /Scan something first/);
+    // A Gemini follow-up is an intelligence request too: no credit, no answer.
+    assert.equal((await post("/api/follow-up", JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }))).status, 429);
     // Speech and clip transcription are not intelligence requests and still work after exhaustion.
     const speech = await post("/api/speech", JSON.stringify({ text: "Hello" }));
     assert.equal(speech.status, 200);
@@ -200,4 +186,29 @@ test("release gate: the educational allowlist contains no production layer and t
     const text = readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
     assert.ok(!/production\//.test(text) && !/5 (intelligence )?requests per 5 hours|VISITOR_COOKIE_SECRET|INTELLIGENCE_PAUSED/i.test(text), `${file} stays free of hosted-only code`);
   }
+});
+
+test("staging acceptance override: honoured only on a Cloud Run host with DIAGNOSTICS=1, never elsewhere", async () => {
+  const staging = { ACCEPTANCE_TEST_LIMIT: "30", DIAGNOSTICS: "1", PUBLIC_ORIGIN: "https://vision-intelligence-staging-271712590646.europe-west2.run.app" };
+  assert.deepEqual(acceptanceOverride(staging), { limit: 30, speechLimit: 90 });
+  assert.equal(acceptanceOverride({}), null, "unset means the public policy");
+  // Each guard alone is enough to refuse: production origin, no diagnostics marker, bad number.
+  assert.match(acceptanceOverride({ ...staging, PUBLIC_ORIGIN: "https://vision.ucenth.com" }).error, /run\.app/);
+  assert.match(acceptanceOverride({ ...staging, PUBLIC_ORIGIN: "https://vision.ucenth.com.run.app.example" }).error, /run\.app/);
+  assert.match(acceptanceOverride({ ...staging, DIAGNOSTICS: "0" }).error, /DIAGNOSTICS=1/);
+  for (const bad of ["5", "61", "abc", "7.5"]) assert.match(acceptanceOverride({ ...staging, ACCEPTANCE_TEST_LIMIT: bad }).error, /whole number/, bad);
+  // Through the server: the override changes the numbers, shows on /health, and the
+  // same variables on the production origin are ignored with the public numbers kept.
+  await hosted({}, async (base) => {
+    assert.deepEqual((await (await fetch(`${base}/health`)).json()).acceptanceTest, { limit: 8, speechLimit: 24 });
+    const q = await fetch(`${base}/api/quota`);
+    const cookie = q.headers.get("set-cookie").split(";")[0];
+    assert.equal((await q.json()).limit, 8);
+    for (let i = 0; i < 8; i++) assert.equal((await fetch(`${base}/api/identify`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: identifyBody() })).status, 200, `request ${i}`);
+    assert.equal((await fetch(`${base}/api/identify`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: identifyBody() })).status, 429);
+  }, { ACCEPTANCE_TEST_LIMIT: "8", DIAGNOSTICS: "1", PUBLIC_ORIGIN: "https://vision-intelligence-staging-271712590646.europe-west2.run.app" });
+  await hosted({}, async (base) => {
+    assert.equal((await (await fetch(`${base}/health`)).json()).acceptanceTest, undefined);
+    assert.equal((await (await fetch(`${base}/api/quota`)).json()).limit, LIMIT);
+  }, { ACCEPTANCE_TEST_LIMIT: "8", DIAGNOSTICS: "1", PUBLIC_ORIGIN: "https://vision.ucenth.com" });
 });
