@@ -32,9 +32,11 @@ const caps = panel.querySelector("[data-caps]"),
   events = panel.querySelector("[data-events]"),
   particles = panel.querySelector("[data-particles]");
 const lines = { timing: [], events: [] };
+// The first events (path choice, a recogniser error, the fallback) matter as much as
+// the latest ones, so the buffer keeps the first 40 lines and the most recent 120.
 const push = (target, list, line) => {
   list.push(line);
-  if (list.length > 120) list.shift();
+  if (list.length > 160) list.splice(40, 1);
   target.textContent = list.join("\n");
   target.scrollTop = target.scrollHeight;
 };

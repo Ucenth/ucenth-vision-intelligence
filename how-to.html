@@ -675,30 +675,33 @@ client ||= new GoogleGenAI({
             <p>The server decodes the upload to prove it is a real image, then sends the original bytes to Gemini with the prompt and schema.</p>
             <div class="command" data-source-example="gemini-request">
               <span class="file">lib/gemini.js · createGeminiDetector()</span>
-              <pre><code>const response = await client.models.generateContent({
-  model: "gemini-3.8-flash",
-  contents: [
-    {
-      role: "user",
-      parts: [
-        {
-          text: `${prompt} Do not use external search; evidence_urls must be empty. Keep likely_product at the broader family when the exact model is uncertain. Do not infer publisher, ingredients, performance specifications or other facts absent from the image.`,
-        },
-        { inlineData: { mimeType, data: content.toString("base64") } },
-      ],
+              <pre><code>const response = await withOneRetry(() =&gt;
+  client.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `${prompt} Do not use external search; evidence_urls must be empty. Keep likely_product at the broader family when the exact model is uncertain. Do not infer publisher, ingredients, performance specifications or other facts absent from the image.`,
+          },
+          { inlineData: { mimeType, data: content.toString("base64") } },
+        ],
+      },
+    ],
+    config: {
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseJsonSchema: schema,
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingLevel: "LOW" },
     },
-  ],
-  config: {
-    systemInstruction,
-    responseMimeType: "application/json",
-    responseJsonSchema: schema,
-    temperature: 0.1,
-    maxOutputTokens: 4096,
-    thinkingConfig: { thinkingLevel: "LOW" },
-  },
-});
-if (response.candidates?.[0]?.finishReason !== "STOP")
-  throw new Error("Incomplete identity response");
+  }),
+);
+const finishReason = response.candidates?.[0]?.finishReason;
+if (finishReason !== "STOP")
+  throw new Error(`Incomplete identity response (${finishReason || "no candidate"})`);
 return summarizeIdentity(JSON.parse(response.text));</code></pre>
             </div>
             <h4>What happens next</h4>
@@ -707,6 +710,14 @@ return summarizeIdentity(JSON.parse(response.text));</code></pre>
               schema and applies cautious naming rules before the browser sees anything.
               The route wraps failures into safe messages; provider error text never
               reaches the page.
+            </p>
+            <p>
+              <strong>One retry, and only a fast one:</strong>
+              <code>withOneRetry()</code> repeats the call once when Gemini answers
+              quickly with 429 or a 5xx (measured on real phones: an occasional
+              <em>500 Internal error</em> within a few seconds). A failure that arrives
+              late is not retried, so nobody waits for two full timeouts, and the SDK's
+              own retries stay off so a hung request cannot bill twice.
             </p>
             <p>
               <strong>Asynchronous requests:</strong> identification takes 3–8 seconds.

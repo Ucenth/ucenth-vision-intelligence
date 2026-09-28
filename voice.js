@@ -45,6 +45,12 @@ export const SPEECH_START_TIMEOUT_MS = 5000;
 // The recogniser's onspeechstart fires on brief noises too. Requiring speech to persist
 // for 200 ms (or a transcript to arrive) filters clicks and coughs.
 const SPEECH_DEBOUNCE_MS = 200;
+// Native path: Android Chrome delivers a question as several small FINAL fragments
+// (no interim text at all), one every few hundred milliseconds while the person is
+// still talking. Submitting the first fragment would cut the question off mid-sentence,
+// so finals are collected and sent once no new fragment arrives for this long.
+// Desktop Chrome sends one final after the person stops, so it costs the same pause.
+const FINAL_SETTLE_MS = 800;
 // Server path: end the clip after this much silence following speech, and never
 // record longer than MAX_CLIP_MS.
 const SILENCE_END_MS = 900;
@@ -226,7 +232,8 @@ function clearSpeechTimer(c) {
   clearTimeout(c.speechDebounce);
   clearTimeout(c.silenceTimer);
   clearTimeout(c.clipTimer);
-  c.speechTimer = c.speechDebounce = c.silenceTimer = c.clipTimer = null;
+  clearTimeout(c.finalTimer);
+  c.speechTimer = c.speechDebounce = c.silenceTimer = c.clipTimer = c.finalTimer = null;
 }
 /**
  * Releases everything related to listening: pending timers, the recogniser (handlers
@@ -316,8 +323,10 @@ function activate(c) {
   }
   c.particles = createParticlePresence(c.ui.field, {
     onActivity: (speaking) => {
-      // Only the server path owns a microphone stream; native recognition reports speech itself.
-      if (c.stream && c.sttPath === "server" && ["LISTENING", "USER_SPEAKING"].includes(c.state)) state(c, speaking ? "USER_SPEAKING" : "LISTENING");
+      // Only the server path owns a microphone stream; native recognition reports speech
+      // itself. The transition is one-way: a breath between words must not flip the
+      // panel back to LISTENING while the clip is still being recorded.
+      if (speaking && c.stream && c.sttPath === "server" && c.state === "LISTENING") state(c, "USER_SPEAKING");
     },
     onMetrics: (metrics) => c.ui.panel.dispatchEvent(new CustomEvent("ucenth:particles-metrics", { bubbles: true, detail: metrics })),
     onFallback: () => diag("particles", { fallback: true }),
@@ -392,8 +401,19 @@ async function listenNative(c, turn, attempt, caps) {
   // how-to:end speech-recognition
   let speechStarted = false,
     candidateAt = null,
-    sawAudio = false;
+    sawAudio = false,
+    finals = "";
   const live = () => valid(c, turn) && c.recognition === recognition;
+  // Send everything final so far as one question (see FINAL_SETTLE_MS).
+  const submit = (why) => {
+    clearTimeout(c.finalTimer);
+    c.finalTimer = null;
+    const question = finals.trim();
+    if (!live() || !question) return;
+    diag("recognition.submit", { why, chars: question.length });
+    mark("speech-final");
+    ask(c, question);
+  };
   const confirmSpeech = () => {
     if (!live()) return;
     speechStarted = true;
@@ -432,17 +452,21 @@ async function listenNative(c, turn, attempt, caps) {
     }
     diag("recognition.result", { interimChars: interim.length, finalChars: final.length });
     if ((final + interim).trim()) confirmSpeech();
-    c.ui.interim.textContent = interim;
     c.particles?.pulse(0.5);
     if (final.trim()) {
-      mark("speech-final");
-      ask(c, final.trim());
+      finals += (finals && !finals.endsWith(" ") ? " " : "") + final.trim();
+      clearTimeout(c.finalTimer);
+      c.finalTimer = setTimeout(() => submit("settled"), FINAL_SETTLE_MS);
     }
+    // Show the person what has been heard so far: settled finals plus the live guess.
+    c.ui.interim.textContent = (finals + " " + interim).trim();
   };
   recognition.onerror = (event) => {
     if (c.recognition !== recognition || !valid(c, turn)) return;
     diag("recognition.error", { error: event.error, sawAudio });
     if (event.error === "no-speech") return;
+    // A question already heard is worth more than a retry: send it, then move on.
+    if (finals.trim()) return submit("recognition-error");
     if (event.error === "not-allowed" || event.error === "service-not-allowed")
       return voiceUnavailable(c, event.error === "not-allowed" ? "Microphone access was denied. You can continue by typing." : "Voice couldn't start on this device. You can continue by typing.");
     // Anything else (audio-capture, network, aborted by the platform): switch this
@@ -459,7 +483,9 @@ async function listenNative(c, turn, attempt, caps) {
     voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
   };
   recognition.onend = () => {
-    diag("recognition.end", { speechStarted, sawAudio });
+    diag("recognition.end", { speechStarted, sawAudio, pendingChars: finals.trim().length });
+    // The recogniser closed on its own: send what it heard rather than waiting.
+    if (live() && finals.trim()) return submit("recognition-ended");
     if (live()) pauseConversation(c, speechStarted ? "recognition-ended" : "no-speech");
   };
   recognition.start();
@@ -499,20 +525,22 @@ async function listenServer(c, turn, attempt, caps) {
     mark("transcribe-start", { bytes: blob.size });
     try {
       const response = await fetch("/api/transcribe", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
       if (!valid(c, turn)) return;
-      mark("transcribe-done", { chars: (result.text || "").length });
+      mark("transcribe-done", { status: response.status, chars: (result.text || "").length });
       c.ui.interim.textContent = "";
-      if (!response.ok) throw Error("transcribe");
+      if (!response.ok) throw Object.assign(Error("transcribe"), { status: response.status, serverMessage: typeof result.error === "string" ? result.error : "" });
       if (result.text?.trim()) {
         mark("speech-final");
         ask(c, result.text.trim());
       } else pauseConversation(c, "empty-transcript");
     } catch (error) {
       if (!valid(c, turn)) return;
-      diag("error", { where: "transcribe", message: String(error?.message || error).slice(0, 120) });
+      diag("error", { where: "transcribe", status: error?.status, message: String(error?.message || error).slice(0, 120) });
       c.ui.interim.textContent = "";
       pauseConversation(c, "transcribe-failed");
+      // Say why, in the server's words when it gave any; the typed field stays open.
+      c.ui.notice.textContent = error?.serverMessage || "Your question couldn't be heard clearly. Please try again or type it.";
     }
   };
   // Speech detection from the analyser: quiet room → noise floor, then a clear rise.
@@ -712,10 +740,13 @@ async function ask(c, question) {
       body: JSON.stringify({ image: c.image || undefined, document: c.document || undefined, identification: c.identification, question, history: c.history.slice(-6) }),
       signal: c.request.signal,
     });
-    const result = await response.json();
+    const result = await response.json().catch(() => ({}));
     if (!valid(c, turn)) return;
-    mark("follow-up-response", { serverMs: result.elapsedMs });
-    if (!response.ok || typeof result.answer !== "string") throw Error("Follow-up unavailable");
+    mark("follow-up-response", { status: response.status, serverMs: result.elapsedMs });
+    // The server's own message (allowance used up, capacity paused, retry advice) is
+    // written for the person and is shown as is; anything else gets the generic notice.
+    if (!response.ok || typeof result.answer !== "string")
+      throw Object.assign(Error("Follow-up unavailable"), { status: response.status, serverMessage: typeof result.error === "string" ? result.error : "" });
     c.pendingAnswer = result.answer;
     c.history.push({ role: "user", text: question }, { role: "assistant", text: result.answer });
     c.history = c.history.slice(-6);
@@ -730,8 +761,9 @@ async function ask(c, question) {
     }
   } catch (error) {
     if (!valid(c, turn)) return;
+    diag("error", { where: "follow-up", status: error?.status, name: error?.name, message: String(error?.message || error).slice(0, 120) });
     state(c, "FOLLOW_UP_UNAVAILABLE");
-    c.ui.notice.textContent = "The answer couldn't be completed. Your captured object is preserved; please ask again.";
+    c.ui.notice.textContent = error?.serverMessage || "The answer couldn't be completed. Your captured object is preserved; please ask again.";
     c.ui.input.value = question;
   } finally {
     clearTimeout(timeout);

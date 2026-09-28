@@ -11,25 +11,31 @@
  * if the request is rejected before any Google work happens (bad upload, validation
  * error, upstream failure). So only successful intelligence actions cost a credit.
  *
- * Charon speech is not an intelligence request. It is bounded separately so a visitor
- * cannot generate unlimited synthesis without ever asking a question. */
+ * An intelligence request is a scan: an image identification or a document analysis.
+ * The spoken conversation that follows a scan is part of that scan, not a new request:
+ * follow-up questions come out of a separate follow-up allowance, bounded per visitor
+ * per window so a conversation can run for many turns while nobody can chat without
+ * limit. Charon speech and clip transcription are bounded the same way. None of these
+ * cost a request credit, and none are available to a visitor who has not scanned. */
 export const LIMIT = 5;
 export const WINDOW_MS = 5 * 60 * 60 * 1000;
-export const SPEECH_LIMIT = 15; // introductions + answers for five questions, with slack
+export const FOLLOW_UP_LIMIT = 30; // six spoken turns per scan, with slack for retries
+export const SPEECH_LIMIT = 90; // one Charon answer and one transcription per turn, plus intros
 export const INFLIGHT_MAX = 1; // one expensive request at a time per visitor
 export const INFLIGHT_TTL_MS = 150 * 1000; // a hung request stops blocking after this
 
 export function emptyRecord() {
-  return { uses: [], speech: [], inflight: {} };
+  return { uses: [], followUps: [], speech: [], inflight: {} };
 }
 function prune(record, now) {
   const since = now - WINDOW_MS;
   const uses = (record.uses || []).filter((u) => u.t > since);
+  const followUps = (record.followUps || []).filter((t) => t > since);
   const speech = (record.speech || []).filter((t) => t > since);
   const inflight = Object.fromEntries(
     Object.entries(record.inflight || {}).filter(([, t]) => now - t < INFLIGHT_TTL_MS),
   );
-  return { uses, speech, inflight };
+  return { uses, followUps, speech, inflight };
 }
 export function status(record, now = Date.now()) {
   const r = prune(record, now);
@@ -41,6 +47,7 @@ export function status(record, now = Date.now()) {
     resetAt: remaining === 0 && oldest !== null ? oldest + WINDOW_MS : null,
     // Rolling window: the next single credit returns when the oldest use expires.
     nextAt: oldest !== null ? oldest + WINDOW_MS : null,
+    followUpsRemaining: Math.max(0, FOLLOW_UP_LIMIT - r.followUps.length),
     inflight: Object.keys(r.inflight).length,
   };
 }
@@ -60,6 +67,14 @@ export function settle(record, id, success, now = Date.now()) {
   delete r.inflight[id];
   if (!success) r.uses = r.uses.filter((u) => u.id !== id);
   return r;
+}
+/** One follow-up question: needs a scan in the window and a follow-up slot. */
+export function reserveFollowUp(record, now = Date.now()) {
+  const r = prune(record, now);
+  if (r.uses.length === 0) return { allowed: false, reason: "no-scan", record: r };
+  if (r.followUps.length >= FOLLOW_UP_LIMIT) return { allowed: false, reason: "exhausted", record: r };
+  r.followUps.push(now);
+  return { allowed: true, record: r, remaining: FOLLOW_UP_LIMIT - r.followUps.length };
 }
 export function reserveSpeech(record, now = Date.now()) {
   const r = prune(record, now);

@@ -19,7 +19,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { createGeminiDetector } from "./lib/gemini.js";
+import { createGeminiDetector, failureReason } from "./lib/gemini.js";
 import { createVoiceRoutes } from "./lib/voice-routes.js";
 import { createDocumentRoute } from "./lib/document-routes.js";
 
@@ -229,7 +229,7 @@ export function createServer({
         /credentials|authentication|ENOENT/i.test(error.message || "");
       const quota = [8, 429].includes(code);
       console.error(
-        `Identification request failed (${auth ? "authentication" : quota ? "quota" : "upstream"}).`,
+        `Identification request failed (${auth ? "authentication" : quota ? "quota" : "upstream"}; ${failureReason(error)}).`,
       );
       return json(res, quota ? 429 : auth ? 503 : 502, {
         error: quota

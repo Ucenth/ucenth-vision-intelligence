@@ -4,21 +4,24 @@
  *   /health, /robots.txt, /sitemap.xml, /hosted.js, /hosted.css, /api/quota,
  *   /download/<zip>            cheap hosted-only routes answered here
  *   /  and /how-to.html        served with hosted metadata and the hosted script injected
- *   intelligence POSTs         visitor identity → circuit breaker → network signals →
+ *   scan POSTs                 visitor identity → circuit breaker → network signals →
  *                              per-visitor concurrency → 5-per-5-hours reservation →
  *                              refund on failure, headers with remaining allowance
- *   /api/speech                bounded per visitor, never counted as a request
+ *   /api/follow-up             the conversation after a scan: circuit breaker, then a
+ *                              separate per-visitor follow-up allowance, no credit
+ *   /api/speech, /api/transcribe   bounded per visitor, never counted as a request
  * Everything else falls through to the normal routes. */
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { reserve, settle, reserveSpeech, status, emptyRecord, formatWait, WINDOW_MS } from "./quota/policy.js";
+import { reserve, settle, reserveFollowUp, reserveSpeech, status, emptyRecord, formatWait, WINDOW_MS } from "./quota/policy.js";
 import { createVisitorIdentity } from "./abuse/visitor.js";
 import { createNetworkSignals } from "./abuse/network.js";
 import { createChallenge } from "./abuse/challenge.js";
 import { createCircuit } from "./cloud/circuit.js";
 import { logEvent, requestType } from "./cloud/logging.js";
 
-const INTELLIGENCE = new Set(["/api/identify", "/api/document", "/api/follow-up"]);
+const SCANS = new Set(["/api/identify", "/api/document"]);
+const GATED = new Set([...SCANS, "/api/follow-up", "/api/speech", "/api/transcribe"]);
 const ZIP_NAME = "ucenth-vision-intelligence-source.zip";
 const json = (res, status, value) => {
   res.writeHead(status, { "Content-Type": "application/json" });
@@ -30,6 +33,8 @@ export const MESSAGES = {
   busy: "One request at a time, please. Wait for the current one to finish.",
   flagged: "Unusual traffic from your network. Please try again later.",
   speech: "Voice is unavailable right now. The written answer is still available.",
+  followUpNoScan: "Scan something first, then ask about it.",
+  followUpExhausted: "The free conversation allowance for this period is used up. Scan again later to continue.",
 };
 
 export function createHostedLayer({
@@ -113,7 +118,7 @@ export function createHostedLayer({
       json(res, 200, source);
       return true;
     }
-    if (req.method !== "POST" || !(INTELLIGENCE.has(pathname) || pathname === "/api/speech" || pathname === "/api/transcribe")) return false;
+    if (req.method !== "POST" || !GATED.has(pathname)) return false;
     try {
       return await gate(req, res, pathname, type, done);
     } catch (error) {
@@ -145,6 +150,23 @@ export function createHostedLayer({
       json(res, 503, { error: MESSAGES.paused, paused: true });
       done(503, { quota: "paused" });
       return true;
+    }
+    // A follow-up question continues the scan the visitor already paid for. It draws
+    // on the follow-up allowance instead of a request credit, so a conversation can
+    // run its course while nobody can hold an unlimited chat.
+    if (pathname === "/api/follow-up") {
+      const r = await store.update(key, async (current) => {
+        const d = reserveFollowUp(current || emptyRecord());
+        return { value: d.record, result: d };
+      });
+      if (!r.allowed) {
+        json(res, 429, { error: r.reason === "no-scan" ? MESSAGES.followUpNoScan : MESSAGES.followUpExhausted });
+        done(429, { quota: `follow-up-${r.reason}` });
+        return true;
+      }
+      res.setHeader("X-Follow-Ups-Remaining", String(r.remaining));
+      res.on("finish", () => done(res.statusCode, { quota: res.statusCode < 400 ? "follow-up" : "follow-up-failed", followUpsRemaining: r.remaining }));
+      return false;
     }
     if (await network.flagged(req)) {
       const token = req.headers["x-challenge-token"];

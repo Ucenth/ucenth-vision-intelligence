@@ -2,7 +2,7 @@
 // release allowlist: the production layer is UCENTH's operational concern.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reserve, settle, reserveSpeech, status, emptyRecord, formatWait, LIMIT, WINDOW_MS, SPEECH_LIMIT } from "../production/quota/policy.js";
+import { reserve, settle, reserveFollowUp, reserveSpeech, status, emptyRecord, formatWait, LIMIT, WINDOW_MS, SPEECH_LIMIT, FOLLOW_UP_LIMIT } from "../production/quota/policy.js";
 import { createVisitorIdentity, COOKIE } from "../production/abuse/visitor.js";
 import { createMemoryStore } from "../production/quota/memory-store.js";
 import { createHostedServer } from "../production/server.js";
@@ -40,6 +40,19 @@ test("allowance: five per rolling five hours, refunds on failure, accurate reset
   let s = settle(reserve(emptyRecord(), "q", t0).record, "q", true, t0 + 1);
   for (let i = 0; i < SPEECH_LIMIT; i++) s = reserveSpeech(s, t0 + 2 + i).record;
   assert.equal(reserveSpeech(s, t0 + 100).allowed, false);
+  // Follow-ups continue a scan: no scan, no follow-up; then a separate bounded allowance
+  // that never touches the request credits.
+  assert.equal(reserveFollowUp(emptyRecord(), t0).reason, "no-scan");
+  let f = settle(reserve(emptyRecord(), "scan", t0).record, "scan", true, t0 + 1);
+  for (let i = 0; i < FOLLOW_UP_LIMIT; i++) {
+    const d = reserveFollowUp(f, t0 + 2 + i);
+    assert.equal(d.allowed, true, `follow-up ${i}`);
+    f = d.record;
+  }
+  assert.equal(reserveFollowUp(f, t0 + 100).reason, "exhausted");
+  assert.equal(status(f, t0 + 100).remaining, LIMIT - 1, "follow-ups cost no request credit");
+  assert.equal(status(f, t0 + 100).followUpsRemaining, 0);
+  assert.equal(reserveFollowUp(f, t0 + WINDOW_MS + 3).allowed, false, "the scan left the window too");
   assert.equal(formatWait(2 * 3600000 + 14 * 60000), "2h 14m");
   assert.equal(formatWait(30000), "1m");
 });
@@ -116,7 +129,16 @@ test("hosted server: health, metadata, download, quota headers, exhaustion, refu
     const body = await denied.json();
     assert.match(body.error, /^Free usage limit reached\. You can use UCENTH Vision Intelligence again in \d+h \d{2}m\.$/);
     assert.ok(body.resetAt > Date.now() + WINDOW_MS - 60000);
-    assert.equal((await post("/api/follow-up", JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }))).status, 429);
+    // The conversation continues after the last credit: follow-ups draw on their own
+    // allowance and cost no credit, so a five-turn conversation always completes.
+    const followUp = await post("/api/follow-up", JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }));
+    assert.equal(followUp.status, 200);
+    assert.equal(followUp.headers.get("x-follow-ups-remaining"), String(FOLLOW_UP_LIMIT - 1));
+    assert.equal((await (await fetch(`${base}/api/quota`, { headers: { Cookie: cookie } })).json()).remaining, 0, "follow-ups never touch the request credits");
+    // A visitor who has not scanned anything cannot open a conversation.
+    const strangerFollowUp = await fetch(`${base}/api/follow-up`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }) });
+    assert.equal(strangerFollowUp.status, 429);
+    assert.match((await strangerFollowUp.json()).error, /Scan something first/);
     // Speech and clip transcription are not intelligence requests and still work after exhaustion.
     const speech = await post("/api/speech", JSON.stringify({ text: "Hello" }));
     assert.equal(speech.status, 200);

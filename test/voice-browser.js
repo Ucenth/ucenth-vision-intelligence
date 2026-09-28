@@ -40,7 +40,14 @@ try {
       start() {
         window.currentRecognition = this;
         voiceProbe.recognition = true; voiceProbe.starts++;
-        if (voiceProbe.starts <= 5) this.timer = setTimeout(() => {
+        // Turn 3 behaves like Android Chrome: no interim text, the question arrives as
+        // two small FINAL fragments 300 ms apart while the person is still talking.
+        if (voiceProbe.starts === 3) this.timer = setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: "What can" }], { isFinal: true })] });
+          this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1,
+            results: [Object.assign([{ transcript: "What can" }], { isFinal: true }), Object.assign([{ transcript: " you see?" }], { isFinal: true })] }), 300);
+        }, 180);
+        else if (voiceProbe.starts <= 5) this.timer = setTimeout(() => {
           this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: "What can you see?" }], { isFinal: false })] });
           this.timer = setTimeout(() => this.onresult?.({ resultIndex: 0,
             results: [Object.assign([{ transcript: "What can you see?" }], { isFinal: true })] }), 150);
@@ -75,6 +82,8 @@ try {
   await page.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
   await page.waitForFunction(() => voiceProbe.starts >= 6, null, { timeout: 40000 });
   assert.equal(calls.length, 5); assert.deepEqual(calls.map(c => c.history.length), [0, 2, 4, 6, 6]);
+  // Android-style fragments were joined and sent as one question, not cut off at "What can".
+  assert.deepEqual(calls.map(c => c.question), Array(5).fill("What can you see?"));
   assert.ok(await page.evaluate(() => voiceProbe.overlaps.length === 6 && voiceProbe.overlaps.every(x => !x)));
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   // A resumed session with no speech must close its tracks and stay paused.
