@@ -1,0 +1,25 @@
+# Files not uploaded by `gcloud run deploy --source .` (hosted deployment only).
+# Dependencies are installed by the buildpack from package-lock.json.
+.git
+.gitignore
+.gcloudignore
+node_modules/
+.npm-cache/
+.env
+.env.*
+!.env.example
+artifacts/
+release/
+benchmark/
+private/
+captures/
+*.zip
+*.pem
+*.key
+*credentials*.json
+*service-account*.json
+application_default_credentials.json
+.local/
+.idea/
+.vscode/
+coverage/

@@ -44,6 +44,19 @@ export async function createHostedServer({ env = process.env, store, services = 
   store ||= (env.QUOTA_STORE || (env.NODE_ENV === "production" ? "firestore" : "memory")) === "firestore"
     ? createFirestoreStore({ project: env.FIRESTORE_PROJECT || env.GOOGLE_CLOUD_PROJECT })
     : createMemoryStore();
+  // AI_MOCK=1 replaces Google services with instant fakes so infrastructure load tests
+  // never create Gemini or Charon traffic. It is only for staging load tests; the
+  // start-up log line makes any accidental use obvious.
+  if (env.AI_MOCK === "1") {
+    process.stdout.write(JSON.stringify({ severity: "WARNING", message: "AI_MOCK=1: Google services are stubbed. Never run the public service this way." }) + "\n");
+    services = {
+      identify: async () => ({ provider: "mock", status: "hypothesis", confidence: "high", name: "Mock object", brand: "", category: "Mock", subjectType: "object", observations: ["Stubbed result"], needsAnotherView: false, requestedView: "", description: "AI_MOCK", identityEstablished: false, identityName: "", identitySource: "none" }),
+      followUp: async () => ({ answer: "Mock answer.", userSuppliedIdentity: "" }),
+      synthesize: async () => Buffer.alloc(44 + 2400),
+      analyzeDocument: async ({ kind, name }) => ({ subjectType: "document", source: kind, fileName: name, pageCount: 1, documentType: "General Document", title: "Mock", name: "Mock", language: { primary: "English", code: "en", additional: [], direction: "ltr" }, translationAvailable: false, translationPartial: false, translatedPages: [], summary: "AI_MOCK", fields: [], warnings: [], pages: [{ page: 1, original: "mock", english: "", scanned: false }], scannedPages: 0, confidence: "high", needsAnotherView: false, status: "hypothesis", conversationIntro: "Mock.", usage: {}, elapsedMs: 0 }),
+      ...services,
+    };
+  }
   const zip = await buildEducationalZip();
   const publicHost = new URL(publicOrigin).host.replace(/\./g, "\\.");
   const before = createHostedLayer({ store, secret, publicOrigin, root, zip, secureCookies: publicOrigin.startsWith("https"), env });
