@@ -261,6 +261,34 @@ try {
   assert.equal(await ios.evaluate(() => window.micCalls), micCallsBefore + 2, "a fresh stream was requested after the stale one");
   assert.ok(await ios.evaluate(() => window.diagLog.find(d => d.event === "microphone.signal").peak > 0));
   assert.ok(["LISTENING", "USER SPEAKING"].includes(await ios.locator(".voice-state").textContent()), "listening continues on the recovered microphone");
+  // Stalled output after idle (seen physically on iOS 18.6): the context says running
+  // but renders zeros. The next answer's first playback is made silent; the probe must
+  // rebuild the graph and replay the same audio exactly once, ending once.
+  await ios.evaluate(() => {
+    window.silentPlaybacks = 1; // the next buffer source plays a zero buffer
+    const create = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const source = create.call(this);
+      const descriptor = Object.getOwnPropertyDescriptor(AudioBufferSourceNode.prototype, "buffer");
+      Object.defineProperty(source, "buffer", { set(buffer) {
+        if (window.silentPlaybacks > 0) { window.silentPlaybacks--; buffer = this.context.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate); }
+        descriptor.set.call(this, buffer);
+      }, get() { return descriptor.get.call(this); } });
+      return source;
+    };
+  });
+  const playbackEndsBefore = await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback-restart").length);
+  await ios.locator(".voice-typed").evaluate(node => node.open = true);
+  await ios.getByRole("textbox", { name: "Question about the scanned object" }).fill("Say that again.");
+  await ios.getByRole("button", { name: "Send" }).click();
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "playback.silent"), null, { timeout: 15000 });
+  await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "IDLE" || ["LISTENING", "USER SPEAKING", "OPENING MICROPHONE"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 15000 });
+  const outputRecovery = await ios.evaluate(() => window.diagLog.filter(d => ["playback.silent", "audio-context.recreated"].includes(d.event)).map(d => d.event));
+  assert.deepEqual(outputRecovery.slice(-2), ["playback.silent", "audio-context.recreated"], "silent first playback rebuilt the graph once");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback.silent").length), 1, "no recovery loop");
+  assert.ok((await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback").length)) >= 2, "the replay was probed too");
+  assert.ok((await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback").at(-1).rms)) > 0, `the replay carried signal (${await ios.evaluate(() => JSON.stringify(window.diagLog.filter(d => ["playback", "playback.silent", "audio-context.recreated", "error", "state"].includes(d.event)).slice(-12)))})`);
+  assert.equal(playbackEndsBefore, 0);
   assert.deepEqual(iosErrors, []);
   console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup, iOS fallback memory and stale-microphone recovery.");
 } finally { await browser.close(); }

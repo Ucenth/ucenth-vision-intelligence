@@ -1079,29 +1079,67 @@ return Buffer.from(response.data.audioContent, "base64");</code></pre>
               <span class="file">voice.js · speak()</span>
               <pre><code>activate(c);
 stopMic(c);
-c.outputAnalyser = audioContext.createAnalyser();
-c.outputAnalyser.fftSize = 2048;
-c.outputAnalyser.smoothingTimeConstant = 0.65;
-c.outputAnalyser.connect(audioContext.destination);
-c.playback = audioContext.createBufferSource();
-c.playback.buffer = audio;
-c.playback.connect(c.outputAnalyser);
-c.particles.connect(c.outputAnalyser, "charon");
-c.playback.onended = () =&gt; {
-  if (!valid(c, turn)) return;
-  c.playback.disconnect();
-  c.playback = null;
-  c.outputAnalyser?.disconnect();
-  c.outputAnalyser = null;
-  c.particles.disconnect();
-  mark("playback-end");
-  returnToListening(c, turn);
+setAudioSession("playback");
+const play = (buffer) =&gt; {
+  c.outputAnalyser = audioContext.createAnalyser();
+  c.outputAnalyser.fftSize = 2048;
+  c.outputAnalyser.smoothingTimeConstant = 0.65;
+  c.outputAnalyser.connect(audioContext.destination);
+  c.playback = audioContext.createBufferSource();
+  c.playback.buffer = buffer;
+  c.playback.connect(c.outputAnalyser);
+  c.particles.connect(c.outputAnalyser, "charon");
+  c.playback.onended = () =&gt; {
+    if (!valid(c, turn)) return;
+    c.playback.disconnect();
+    c.playback = null;
+    c.outputAnalyser?.disconnect();
+    c.outputAnalyser = null;
+    c.particles.disconnect();
+    mark("playback-end");
+    returnToListening(c, turn);
+  };
+  c.playback.start();
 };
 c.ui.answer.textContent = text;
 c.pendingAnswer = null;
 state(c, "VISION_SPEAKING");
-c.playback.start();
-mark("playback-start");</code></pre>
+play(audio);
+mark("playback-start", { contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
+// Output probe: iOS can leave a context that says "running" but renders nothing
+// after an idle period (seen physically: answer shown, no sound, playback never
+// ending). A short way into playback the analyser must show signal; exact zeros
+// mean a stalled graph, so it is rebuilt once and the same audio decoded again.
+const probeAt = Math.min(600, Math.max(120, audio.duration * 500));
+const probe = () =&gt; {
+  c.playbackProbe = setTimeout(async () =&gt; {
+    if (!valid(c, turn) || !c.playback || !c.outputAnalyser) return;
+    const data = new Float32Array(c.outputAnalyser.fftSize);
+    c.outputAnalyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const rms = Math.sqrt(sum / data.length);
+    diag("playback", { rms: +rms.toFixed(4), contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none", probeAt: Math.round(probeAt), recovered: c.playbackRecovered });
+    if (rms &gt; 0 || c.playbackRecovered) return;
+    c.playbackRecovered = true;
+    diag("playback.silent", { contextState: audioContext.state });
+    c.playback.onended = null;
+    try {
+      c.playback.stop();
+    } catch {}
+    c.playback.disconnect();
+    c.outputAnalyser.disconnect();
+    c.particles.disconnect();
+    await recreateAudioContext();
+    if (!valid(c, turn) || !encoded) return;
+    const again = await audioContext.decodeAudioData(encoded.slice(0));
+    if (!valid(c, turn)) return;
+    play(again);
+    mark("playback-restart", { contextState: audioContext.state });
+    probe(); // logs the replay's level; the recovered flag stops any second rebuild
+  }, probeAt);
+};
+probe();</code></pre>
             </div>
             <h4>The five-second timeout</h4>
             <p>

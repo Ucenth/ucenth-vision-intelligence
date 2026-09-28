@@ -125,18 +125,19 @@ function unlock() {
     audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
     audioUnlock = audioContext.resume();
     audioUnlock.catch(() => {});
-    keepRecordingSession();
   } catch {}
 }
 /**
- * iOS Safari (17+) exposes navigator.audioSession. Left on "auto", the session drops
- * to playback-only once capture stops and audio plays, and a later microphone stream
- * can come back with no samples at all. Asking for "play-and-record" keeps capture
- * and Charon playback in one session. Other browsers have no such property.
+ * iOS Safari (17+) exposes navigator.audioSession. The type is set for what is about
+ * to happen: "play-and-record" just before the recorded-clip path opens the microphone
+ * (a session left in playback mode can hand back a stream with no samples), and
+ * "playback" just before Charon speaks (a play-and-record session reactivated after
+ * an idle period routes output to the earpiece, which sounds like silence). Other
+ * browsers have no such property and the call is a no-op.
  */
-function keepRecordingSession() {
+function setAudioSession(type) {
   try {
-    if (navigator.audioSession && navigator.audioSession.type !== "play-and-record") navigator.audioSession.type = "play-and-record";
+    if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type;
   } catch {}
 }
 /**
@@ -154,7 +155,6 @@ async function recreateAudioContext() {
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   audioUnlock = audioContext.resume();
   audioUnlock.catch(() => {});
-  keepRecordingSession();
   await audioUnlock;
   diag("audio-context.recreated", { state: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
 }
@@ -327,6 +327,8 @@ function cancelTurn(c) {
   c.request = null;
   clearTimeout(c.guard);
   c.guard = null;
+  clearTimeout(c.playbackProbe);
+  c.playbackProbe = null;
   stopMic(c);
   if (c.playback) {
     c.playback.onended = null;
@@ -553,6 +555,7 @@ async function listenNative(c, turn, attempt, caps) {
  * detected from the analyser with a noise gate measured in the first 400 ms.
  */
 async function listenServer(c, turn, attempt, caps) {
+  setAudioSession("play-and-record");
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
   if (!valid(c, turn) || c.listeningAttempt !== attempt || !c.autoListen || document.hidden) {
     stream.getTracks().forEach((t) => t.stop());
@@ -742,6 +745,7 @@ function returnToListening(c, turn) {
 async function speak(c, text, turn, chime = Promise.resolve()) {
   if (!valid(c, turn) || !voiceEnabled) return;
   stopMic(c);
+  c.playbackRecovered = false; // one graph rebuild per answer, never a loop
   const chimeReady = Promise.resolve(chime).then(() => wait(160));
   const request = new AbortController();
   c.request = request;
@@ -756,8 +760,10 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
       unlock();
       await audioUnlock;
       if (!audioContext || audioContext.state !== "running") throw Error("Audio unavailable");
+      encoded = bytes.slice(0); // kept so a stalled first playback can be decoded again
       return audioContext.decodeAudioData(bytes);
     };
+    let encoded = null;
     const audio = await Promise.race([
       ready(),
       new Promise((_, reject) => {
@@ -774,29 +780,67 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
     // how-to:start charon-playback
     activate(c);
     stopMic(c);
-    c.outputAnalyser = audioContext.createAnalyser();
-    c.outputAnalyser.fftSize = 2048;
-    c.outputAnalyser.smoothingTimeConstant = 0.65;
-    c.outputAnalyser.connect(audioContext.destination);
-    c.playback = audioContext.createBufferSource();
-    c.playback.buffer = audio;
-    c.playback.connect(c.outputAnalyser);
-    c.particles.connect(c.outputAnalyser, "charon");
-    c.playback.onended = () => {
-      if (!valid(c, turn)) return;
-      c.playback.disconnect();
-      c.playback = null;
-      c.outputAnalyser?.disconnect();
-      c.outputAnalyser = null;
-      c.particles.disconnect();
-      mark("playback-end");
-      returnToListening(c, turn);
+    setAudioSession("playback");
+    const play = (buffer) => {
+      c.outputAnalyser = audioContext.createAnalyser();
+      c.outputAnalyser.fftSize = 2048;
+      c.outputAnalyser.smoothingTimeConstant = 0.65;
+      c.outputAnalyser.connect(audioContext.destination);
+      c.playback = audioContext.createBufferSource();
+      c.playback.buffer = buffer;
+      c.playback.connect(c.outputAnalyser);
+      c.particles.connect(c.outputAnalyser, "charon");
+      c.playback.onended = () => {
+        if (!valid(c, turn)) return;
+        c.playback.disconnect();
+        c.playback = null;
+        c.outputAnalyser?.disconnect();
+        c.outputAnalyser = null;
+        c.particles.disconnect();
+        mark("playback-end");
+        returnToListening(c, turn);
+      };
+      c.playback.start();
     };
     c.ui.answer.textContent = text;
     c.pendingAnswer = null;
     state(c, "VISION_SPEAKING");
-    c.playback.start();
-    mark("playback-start");
+    play(audio);
+    mark("playback-start", { contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
+    // Output probe: iOS can leave a context that says "running" but renders nothing
+    // after an idle period (seen physically: answer shown, no sound, playback never
+    // ending). A short way into playback the analyser must show signal; exact zeros
+    // mean a stalled graph, so it is rebuilt once and the same audio decoded again.
+    const probeAt = Math.min(600, Math.max(120, audio.duration * 500));
+    const probe = () => {
+      c.playbackProbe = setTimeout(async () => {
+        if (!valid(c, turn) || !c.playback || !c.outputAnalyser) return;
+        const data = new Float32Array(c.outputAnalyser.fftSize);
+        c.outputAnalyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (const v of data) sum += v * v;
+        const rms = Math.sqrt(sum / data.length);
+        diag("playback", { rms: +rms.toFixed(4), contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none", probeAt: Math.round(probeAt), recovered: c.playbackRecovered });
+        if (rms > 0 || c.playbackRecovered) return;
+        c.playbackRecovered = true;
+        diag("playback.silent", { contextState: audioContext.state });
+        c.playback.onended = null;
+        try {
+          c.playback.stop();
+        } catch {}
+        c.playback.disconnect();
+        c.outputAnalyser.disconnect();
+        c.particles.disconnect();
+        await recreateAudioContext();
+        if (!valid(c, turn) || !encoded) return;
+        const again = await audioContext.decodeAudioData(encoded.slice(0));
+        if (!valid(c, turn)) return;
+        play(again);
+        mark("playback-restart", { contextState: audioContext.state });
+        probe(); // logs the replay's level; the recovered flag stops any second rebuild
+      }, probeAt);
+    };
+    probe();
     // how-to:end charon-playback
   } catch (error) {
     if (!valid(c, turn)) return;
