@@ -131,6 +131,50 @@ h1 span {
   gap: 66px;
   padding: 48px 0 70px;
 }
+/* Collapsible contents: the layout drops to one column while hidden and a small
+   fixed control offers the way back. */
+.layout.contents-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+.contents-toggle {
+  display: block;
+  width: 100%;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+.contents-toggle:hover,
+.contents-show:hover {
+  color: var(--text);
+  border-color: var(--blue);
+}
+.contents-show {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+.contents-show[hidden] {
+  display: none;
+}
 .contents {
   position: sticky;
   top: 24px;
@@ -554,7 +598,8 @@ th {
   }
   .contents h2,
   .search,
-  .search-status {
+  .search-status,
+  .contents-toggle {
     grid-column: 1 / -1;
   }
   .contents a {

@@ -47,6 +47,16 @@ try {
   // Search filters sections and their links; clearing restores them.
   await page.setViewportSize({ width: 1440, height: 1050 });
   await page.goto(`${baseUrl}/how-to.html`);
+  // The contents can be hidden and shown again; the choice survives a reload.
+  await page.getByRole("button", { name: "Hide contents" }).click();
+  assert.ok(await page.locator("#contents").isHidden());
+  assert.ok(await page.locator("#contents-show").isVisible());
+  assert.ok((await page.locator(".guide").boundingBox()).width > 1000, "guide widens when contents are hidden");
+  await page.reload();
+  assert.ok(await page.locator("#contents").isHidden(), "hidden state remembered");
+  await page.getByRole("button", { name: "Contents", exact: true }).click();
+  assert.ok(await page.locator("#contents").isVisible());
+  assert.equal(await page.locator("#contents-toggle").getAttribute("aria-expanded"), "true");
   await page.fill("#search", "magic bytes");
   assert.ok((await page.locator(".guide section:not([hidden])").count()) < (await page.locator(".guide section").count()));
   assert.ok(await page.locator("#uploads:not([hidden])").count());

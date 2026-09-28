@@ -63,8 +63,17 @@
         </p>
         <p class="meta">HTML · CSS · JavaScript · Node.js · Gemini · Cloud Text-to-Speech · Web Audio · WebGL · PDF.js · mammoth</p>
       </div>
-      <div class="layout">
-        <nav class="contents" aria-label="How To contents">
+      <div class="layout" id="layout">
+        <nav class="contents" id="contents" aria-label="How To contents">
+          <button
+            id="contents-toggle"
+            class="contents-toggle"
+            type="button"
+            aria-expanded="true"
+            aria-controls="contents"
+          >
+            Hide contents
+          </button>
           <label class="sr-only" for="search">Search sections</label>
           <input id="search" class="search" type="search" placeholder="Search sections…" autocomplete="off" />
           <p id="search-status" class="search-status" role="status"></p>
@@ -109,6 +118,18 @@
           ><a href="#troubleshooting"><span>29</span> Troubleshooting</a
           ><a href="#architecture"><span>30</span> Architecture</a>
         </nav>
+        <!-- Appears only while the contents are hidden, so the reader can bring them back
+             without scrolling to the top. -->
+        <button
+          id="contents-show"
+          class="contents-show"
+          type="button"
+          aria-expanded="false"
+          aria-controls="contents"
+          hidden
+        >
+          Contents
+        </button>
         <main class="guide">
           <!-- ================= START HERE ================= -->
           <section id="building">

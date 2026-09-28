@@ -39,6 +39,38 @@ for (const block of document.querySelectorAll(".command")) {
 }
 
 // ---------------------------------------------------------------------------
+// Collapsible contents: one state, two controls. "Hide contents" lives in the sidebar;
+// a small fixed "Contents" button appears while it is hidden. The preference is a
+// per-browser convenience kept in localStorage (wrapped in try/catch: storage can be
+// blocked, and the page must still work without it).
+// ---------------------------------------------------------------------------
+const layout = document.getElementById("layout");
+const contents = document.getElementById("contents");
+const hideButton = document.getElementById("contents-toggle");
+const showButton = document.getElementById("contents-show");
+function setContents(open) {
+  layout.classList.toggle("contents-hidden", !open);
+  contents.hidden = !open;
+  showButton.hidden = open;
+  hideButton.setAttribute("aria-expanded", String(open));
+  showButton.setAttribute("aria-expanded", String(open));
+  try {
+    localStorage.setItem("ucenth-howto-contents", open ? "open" : "hidden");
+  } catch {}
+}
+hideButton?.addEventListener("click", () => {
+  setContents(false);
+  showButton.focus();
+});
+showButton?.addEventListener("click", () => {
+  setContents(true);
+  hideButton.focus();
+});
+try {
+  if (localStorage.getItem("ucenth-howto-contents") === "hidden") setContents(false);
+} catch {}
+
+// ---------------------------------------------------------------------------
 // Section search: filters sections and their contents links by plain text.
 // Nothing is indexed ahead of time; the page is small enough to scan on each
 // keystroke, which keeps the implementation honest and dependency-free.
