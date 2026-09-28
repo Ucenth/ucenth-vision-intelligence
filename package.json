@@ -1,0 +1,43 @@
+{
+  "name": "ucenth-vision-intelligence",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "start": "node --use-system-ca --env-file=.env server.js",
+    "dev": "node --use-system-ca --env-file=.env --watch server.js",
+    "test": "node --test test/*.test.js",
+    "test:browser": "node test/browser.js && node test/how-to-browser.js && node test/appearance-browser.js && node test/responsive-browser.js && node test/audio-browser.js && node test/voice-browser.js && node test/person-browser.js && node test/document-browser.js",
+    "test:real": "node test/identify-image.js",
+    "test:person": "node test/person-context.js",
+    "test:document": "node test/document-real.js",
+    "release:check": "node scripts/release-check.js",
+    "howto:sync": "node scripts/how-to-sync.js --write",
+    "release:prepare": "node scripts/prepare-release.js"
+  },
+  "dependencies": {
+    "@google/genai": "2.24.0",
+    "google-auth-library": "^10.5.0",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.3.289",
+    "sharp": "0.35.5"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.2",
+    "playwright": "^1.58.0"
+  },
+  "description": "Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH: object, person-context and document intelligence with hands-free voice conversation",
+  "license": "MIT",
+  "author": "UCENTH — Universal Central Host",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ucenth/ucenth-vision-intelligence.git"
+  },
+  "homepage": "https://github.com/Ucenth/ucenth-vision-intelligence#readme",
+  "bugs": {
+    "url": "https://github.com/Ucenth/ucenth-vision-intelligence/issues"
+  }
+}

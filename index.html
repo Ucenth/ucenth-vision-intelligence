@@ -1,0 +1,275 @@
+<!doctype html>
+<!--
+  UCENTH Vision Intelligence — the scanner page.
+
+  Page architecture (top to bottom):
+    <head>        stylesheets, then three small browser modules
+    .masthead     brand and appearance controls (theme, sounds)
+    .intro        product title
+    .workspace    two columns: the VIEWER (camera / capture / document card)
+                  and the REPORT (instructions → structured result → actions)
+    footer        project links
+
+  Scripts: script.js owns the camera, capture and identification result.
+  voice.js adds the hands-free conversation once a result exists. document.js handles
+  PDF / Word uploads and photographed documents. They communicate with DOM events
+  ("ucenth:result-presented", "ucenth:scan-reset", …) rather than imports, so each file
+  can be read and reused on its own. There is no build step: what you see is what runs.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- theme-color is updated by appearance.js when the light theme is chosen. -->
+    <meta name="theme-color" content="#101112" />
+    <title>UCENTH Vision Intelligence</title>
+    <meta
+      name="description"
+      content="Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH. Capture an object, person context or document and explore a cautious Gemini identification with hands-free conversation."
+    />
+    <meta property="og:title" content="UCENTH Vision Intelligence" />
+    <meta
+      property="og:description"
+      content="Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH."
+    />
+    <meta property="og:type" content="website" />
+    <!--
+      Stylesheets are split by concern: style.css (scanner layout and results),
+      appearance.css (theme tokens), voice.css (conversation panel), document.css
+      (document result and viewer). All of them read the same CSS custom properties.
+    -->
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="appearance.css" />
+    <link rel="stylesheet" href="voice.css" />
+    <link rel="stylesheet" href="document.css" />
+    <!--
+      appearance.js runs first (classic script) so the saved theme applies before paint.
+      The others are ES modules: they run after parsing and can import from lib/.
+      The server's Content-Security-Policy allows scripts only from this origin, so no
+      inline scripts or third-party CDNs are used anywhere in the app.
+    -->
+    <script src="appearance.js"></script>
+    <script type="module" src="/script.js"></script>
+    <script type="module" src="/voice.js"></script>
+    <script type="module" src="/document.js"></script>
+  </head>
+  <body>
+    <!--
+      MASTHEAD
+      Brand, the product line, and two icon buttons whose state lives in aria-pressed
+      (theme and interface sounds). appearance.js reads and updates those attributes.
+    -->
+    <header class="masthead">
+      <a class="brand" href="/" aria-label="UCENTH home"
+        ><span class="brand-mark" aria-hidden="true">u.</span>UCENTH<span
+          class="brand-caption"
+          >UNIVERSAL CENTRAL HOST</span
+        ></a
+      ><span class="tool-name">VISION INTELLIGENCE <span>/</span> 1.0</span>
+      <div class="appearance-controls" aria-label="Appearance preferences">
+        <button
+          id="theme-toggle"
+          class="icon-button"
+          type="button"
+          aria-label="Light appearance"
+          aria-pressed="false"
+          title="Switch to light appearance"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path
+              d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+            />
+          </svg>
+        </button>
+        <button
+          id="sound-toggle"
+          class="icon-button"
+          type="button"
+          aria-label="Mute interface sounds"
+          aria-pressed="true"
+          title="Mute interface sounds"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M11 5L6 9H3v6h3l5 4z" />
+            <path
+              class="sound-waves"
+              d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"
+            />
+            <path class="sound-muted" d="m15 9 6 6m0-6-6 6" />
+          </svg>
+        </button>
+      </div>
+    </header>
+    <main>
+      <div class="intro">
+        <div>
+          <h1>UCENTH Vision</h1>
+          <p class="intro-secondary">Intelligence.</p>
+        </div>
+        <p class="intro-note">
+          Show it. Hold it. Discover it.<br />A closer look, from one frame.
+        </p>
+      </div>
+      <!--
+        WORKSPACE
+        Desktop shows two columns. Once a result exists script.js adds .has-result and
+        the viewer shrinks to the preserved photograph while the report takes the space.
+      -->
+      <div class="workspace">
+        <!--
+          CAMERA STAGE (the viewer)
+
+          <video>  shows the live webcam stream (autoplay + muted + playsinline are
+                   what mobile browsers require for inline playback).
+          #capture is the canvas that receives exactly one frame after the countdown.
+                   Its JPEG is what the server, and therefore Gemini, receives.
+          #edges   is a second canvas for the visual "scan" effect. It is decoration:
+                   the capture underneath is never modified.
+          .target  draws the square guide; #countdown shows 3 · 2 · 1.
+          For PDF / Word uploads, document.js inserts a small file card here instead.
+          Gemini never receives the live video stream, only the captured frame.
+        -->
+        <section class="viewer" aria-label="Object camera and captured image">
+          <div class="viewer-top">
+            <span
+              ><i id="status-dot"></i
+              ><span id="camera-label">CAMERA OFF</span></span
+            ><span id="frame-label">CENTER FRAME</span>
+          </div>
+          <div id="stage" class="stage">
+            <video id="camera" autoplay playsinline muted hidden></video>
+            <canvas
+              id="capture"
+              hidden
+              aria-label="Preserved captured object"
+            ></canvas>
+            <canvas id="edges" hidden aria-hidden="true"></canvas>
+            <div class="target" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <div id="empty-state" class="empty-state">
+              <div class="object-icon" aria-hidden="true">
+                <svg viewBox="0 0 100 120">
+                  <path
+                    d="M35 23V12h30v11M31 24h38l8 15v63a7 7 0 0 1-7 7H30a7 7 0 0 1-7-7V39zM24 52h52M24 87h52"
+                  />
+                  <path class="icon-accent" d="M43 67h14M50 60v14" />
+                </svg>
+              </div>
+              <h2>
+                <span class="hero-primary">Show me what you see.</span
+                ><span class="hero-secondary">I'll tell you what it is.</span>
+              </h2>
+              <p>Place an object inside the frame.</p>
+            </div>
+            <!-- aria-live="assertive": the countdown digits are announced as they change. -->
+            <div
+              id="countdown"
+              class="countdown"
+              hidden
+              aria-live="assertive"
+            ></div>
+            <div class="scan-line" aria-hidden="true"></div>
+            <span class="frame-coordinate coord-left" aria-hidden="true"
+              >[ UC / VISION ]</span
+            ><span class="frame-coordinate coord-right" aria-hidden="true"
+              >AUTO CAPTURE</span
+            >
+          </div>
+          <!-- role="status": the scanner phase is announced politely to screen readers. -->
+          <div class="viewer-bottom">
+            <span id="state-label" role="status">READY WHEN YOU ARE</span
+            ><span id="capture-label">01 / LIVE INPUT</span>
+          </div>
+        </section>
+        <!--
+          REPORT PANEL
+
+          #instructions is shown before a scan. #results is filled by JavaScript with
+          the structured identification (object, person or document) and, for
+          documents, the Original / English viewer. voice.js then appends the
+          conversation panel with the audio-reactive particle presence after #results.
+          aria-live="polite" lets assistive technology announce a new result.
+        -->
+        <section class="report" aria-label="Identification report">
+          <div class="report-top">
+            <span class="eyebrow">OBJECT INTELLIGENCE</span
+            ><span class="small-cross" aria-hidden="true">+</span>
+          </div>
+          <div id="instructions">
+            <p class="section-number">01 — DISCOVER</p>
+            <h2 id="report-title">
+              A new perspective<br />
+              on what’s in front<br />
+              of you.
+            </h2>
+            <p class="report-copy">
+              Bring a label, cover or everyday object into view. We’ll capture
+              it, then identify its visible features.
+            </p>
+            <ol class="steps">
+              <li><span>01</span> Start with an empty frame</li>
+              <li><span>02</span> Show the object and hold steady</li>
+              <li><span>03</span> Explore the visible details</li>
+            </ol>
+          </div>
+          <div id="results" hidden aria-live="polite"></div>
+          <!--
+            ACTIONS
+            Camera access must start from a user gesture, so Open Camera is a real
+            button. The single upload control accepts images, PDF and Word; script.js
+            routes each file by type. Scan another object resets every module.
+          -->
+          <div class="actions">
+            <button id="start" class="primary">
+              <span class="action-copy"
+                ><strong>Open Camera</strong
+                ><small>Scan something in front of you</small></span
+              ><span class="action-arrow" aria-hidden="true">↗</span></button
+            ><button id="reset" class="primary" hidden>
+              <span class="action-copy"
+                ><strong>Scan another object</strong
+                ><small>Start a new capture or file</small></span
+              ><span class="action-arrow" aria-hidden="true">↗</span></button
+            ><button id="stop" class="text-button" hidden>Stop camera</button
+            ><label id="upload-label" class="upload-label"
+              ><span class="action-copy"
+                ><strong>Upload a File</strong
+                ><small>Images, PDF or Word</small></span
+              ><span class="action-arrow" aria-hidden="true">+</span
+              ><input
+                id="upload"
+                aria-label="Upload a file"
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf,.docx,image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            /></label>
+          </div>
+          <p id="hint" class="hint">
+            Camera frames stay on your device until capture. One captured image
+            is sent to Google for identification.
+          </p>
+        </section>
+      </div>
+      <!-- Links open in a new tab; rel="noopener" keeps the scanner tab isolated. -->
+      <footer class="project-footer">
+        <div>
+          <strong>UCENTH Vision Intelligence</strong>
+          <p>Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH</p>
+        </div>
+        <nav aria-label="Project links">
+          <a
+            href="https://github.com/Ucenth/ucenth-vision-intelligence"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Source Code</a
+          ><a href="how-to.html" target="_blank" rel="noopener noreferrer"
+            >How To</a
+          ><a href="LICENSE" target="_blank" rel="noopener noreferrer"
+            >License</a
+          >
+        </nav>
+      </footer>
+    </main>
+  </body>
+</html>

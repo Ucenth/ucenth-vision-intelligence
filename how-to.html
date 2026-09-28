@@ -1,0 +1,1536 @@
+<!doctype html>
+<!--
+  UCENTH Vision Intelligence — How To.
+
+  This page is two things at once: the installation guide and a course in how the
+  project was built. It is plain HTML with no framework; how-to.js adds copy buttons,
+  a section search and a scroll-spy. It opens directly from the downloaded folder.
+  Code examples are real excerpts from the files named on each block.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How To — UCENTH Vision Intelligence</title>
+    <meta
+      name="description"
+      content="How UCENTH Vision Intelligence was built and how to run it: camera capture, Gemini integration, structured prompts, people from context, document intelligence, Charon voice, hands-free conversation, particle visuals and security, with mini-lessons for your own projects."
+    />
+    <meta name="theme-color" content="#101112" />
+    <meta property="og:title" content="How To — UCENTH Vision Intelligence" />
+    <meta
+      property="og:description"
+      content="Open-source UCENTH Vision Intelligence. Install it, then learn how every capability works."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="stylesheet" href="how-to.css" />
+    <link rel="stylesheet" href="appearance.css" />
+    <script src="appearance.js"></script>
+    <script src="how-to.js" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="top">
+        <a class="brand" href="index.html"
+          >UCENTH<small>UNIVERSAL CENTRAL HOST</small></a
+        ><a href="index.html">Open scanner ↗</a>
+        <div class="appearance-controls" aria-label="Appearance preferences">
+          <button
+            id="theme-toggle"
+            class="icon-button"
+            type="button"
+            aria-label="Light appearance"
+            aria-pressed="false"
+            title="Switch to light appearance"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"
+              />
+            </svg>
+          </button>
+        </div>
+      </header>
+      <div class="hero">
+        <p class="eyebrow">UCENTH Vision Intelligence / How To</p>
+        <h1>How it was built.<br /><span>How to build it yourself.</span></h1>
+        <p>
+          Install UCENTH Vision Intelligence on your own computer, then read how each part
+          works: the camera, the AI, people from context, documents, voice,
+          particles and security. Every lesson points at the real source file
+          and ends with something to try.
+        </p>
+        <p class="meta">HTML · CSS · JavaScript · Node.js · Gemini · Cloud Text-to-Speech · Web Audio · WebGL · PDF.js · mammoth</p>
+      </div>
+      <div class="layout">
+        <nav class="contents" aria-label="How To contents">
+          <label class="sr-only" for="search">Search sections</label>
+          <input id="search" class="search" type="search" placeholder="Search sections…" autocomplete="off" />
+          <p id="search-status" class="search-status" role="status"></p>
+          <h2>START HERE</h2>
+          <a href="#building"><span>01</span> What we're building</a
+          ><a href="#overview"><span>02</span> How UCENTH Vision Intelligence works</a
+          ><a href="#structure"><span>03</span> Project structure</a
+          ><a href="#run"><span>04</span> Run it locally</a>
+          <h2>CAMERA</h2>
+          <a href="#webcam"><span>05</span> Access the webcam</a
+          ><a href="#stability"><span>06</span> Detect a stable object</a
+          ><a href="#capture"><span>07</span> Capture a frame</a>
+          <h2>AI</h2>
+          <a href="#gemini"><span>08</span> Connect Gemini safely</a
+          ><a href="#send-image"><span>09</span> Send an image to Gemini</a
+          ><a href="#prompts"><span>10</span> Design structured prompts</a
+          ><a href="#uncertainty"><span>11</span> Handle uncertainty</a>
+          <h2>PEOPLE</h2>
+          <a href="#people"><span>12</span> Understand people from context</a>
+          <h2>DOCUMENTS</h2>
+          <a href="#pdf"><span>13</span> Read PDFs</a
+          ><a href="#docx"><span>14</span> Read Word documents</a
+          ><a href="#translate"><span>15</span> Translate documents</a>
+          <h2>VOICE</h2>
+          <a href="#speech"><span>16</span> Recognize speech</a
+          ><a href="#charon"><span>17</span> Generate Charon voice</a
+          ><a href="#conversation"><span>18</span> Build hands-free conversation</a>
+          <h2>VISUALS</h2>
+          <a href="#particles"><span>19</span> Build the particle presence</a
+          ><a href="#audio-reactive"><span>20</span> Connect particles to real audio</a>
+          <h2>SECURITY</h2>
+          <a href="#credentials"><span>21</span> Protect API credentials</a
+          ><a href="#uploads"><span>22</span> Validate uploaded files</a
+          ><a href="#untrusted"><span>23</span> Handle untrusted documents</a>
+          <h2>BUILD YOUR OWN</h2>
+          <a href="#reuse-gemini"><span>24</span> Reuse Gemini in your project</a
+          ><a href="#reuse-voice"><span>25</span> Reuse voice in your project</a
+          ><a href="#reuse-documents"><span>26</span> Reuse document intelligence</a
+          ><a href="#experiments"><span>27</span> Ideas to experiment with</a>
+          <h2>REFERENCE</h2>
+          <a href="#environment"><span>28</span> Environment variables</a
+          ><a href="#troubleshooting"><span>29</span> Troubleshooting</a
+          ><a href="#architecture"><span>30</span> Architecture</a>
+        </nav>
+        <main class="guide">
+          <!-- ================= START HERE ================= -->
+          <section id="building">
+            <p class="step">01 / START HERE</p>
+            <h2>What we're building.</h2>
+            <p>
+              UCENTH Vision Intelligence is a browser-based visual intelligence project. You
+              show it an object, a person in context, or a document, and it
+              tells you what it sees, then talks with you about it. It combines:
+            </p>
+            <ul>
+              <li><strong>HTML, CSS and JavaScript</strong> for the interface, with no framework and no build step.</li>
+              <li><strong>Browser camera APIs</strong> (getUserMedia and canvas) to capture one clean frame.</li>
+              <li><strong>Node.js</strong> as a small local server that owns the cloud credentials.</li>
+              <li><strong>Gemini multimodal AI</strong> for identification, document analysis and follow-up answers.</li>
+              <li><strong>Cloud Text-to-Speech</strong> (the Charon voice) so answers are spoken.</li>
+              <li><strong>Chrome speech recognition</strong> so you can ask by voice.</li>
+              <li><strong>Web Audio and WebGL</strong> for a particle presence that moves with real sound.</li>
+              <li><strong>PDF.js and mammoth</strong> to read PDF and Word files safely.</li>
+            </ul>
+            <p>
+              Everything runs on your machine except the model calls, which go
+              from your Node server to Google. The source is MIT licensed; Google's
+              hosted models are a separate, paid service.
+            </p>
+            <div class="callout why">
+              <strong>Why?</strong>
+              <p>
+                This project exists to teach. Each capability is written so that it
+                can be understood, and reused, on its own. If you only want the
+                camera, or only the document pipeline, the lessons under
+                <a href="#reuse-gemini">Build your own</a> show how.
+              </p>
+            </div>
+          </section>
+
+          <section id="overview">
+            <p class="step">02 / THE BIG PICTURE</p>
+            <h2>How UCENTH Vision Intelligence works.</h2>
+            <svg class="diagram" viewBox="0 0 720 250" role="img" aria-labelledby="overview-title">
+              <title id="overview-title">Browser talks only to the local Node server; the server talks to Google.</title>
+              <rect x="10" y="20" width="220" height="210" rx="4" />
+              <text x="24" y="44">BROWSER (Chrome)</text>
+              <text x="24" y="70" class="small">camera → canvas → JPEG</text>
+              <text x="24" y="88" class="small">upload PDF / DOCX</text>
+              <text x="24" y="106" class="small">speech recognition</text>
+              <text x="24" y="124" class="small">render structured result</text>
+              <text x="24" y="142" class="small">play Charon audio</text>
+              <text x="24" y="160" class="small">particles from Web Audio</text>
+              <text x="24" y="196" class="small">no credentials here</text>
+              <rect x="270" y="20" width="200" height="210" rx="4" class="accent" />
+              <text x="284" y="44">NODE SERVER (localhost)</text>
+              <text x="284" y="70" class="small">/api/identify</text>
+              <text x="284" y="88" class="small">/api/document</text>
+              <text x="284" y="106" class="small">/api/follow-up</text>
+              <text x="284" y="124" class="small">/api/speech</text>
+              <text x="284" y="160" class="small">validates every byte</text>
+              <text x="284" y="178" class="small">holds ADC credentials</text>
+              <text x="284" y="196" class="small">returns safe errors</text>
+              <rect x="510" y="20" width="200" height="210" rx="4" />
+              <text x="524" y="44">GOOGLE CLOUD</text>
+              <text x="524" y="70" class="small">Gemini 3.8 Flash</text>
+              <text x="524" y="88" class="small">structured JSON out</text>
+              <text x="524" y="124" class="small">Cloud Text-to-Speech</text>
+              <text x="524" y="142" class="small">Charon voice → WAV</text>
+              <text x="524" y="196" class="small">billed to your project</text>
+              <path d="M230 125h40" marker-end="url(#arrow)" />
+              <path d="M470 125h40" />
+              <text x="236" y="118" class="small">JSON</text>
+              <text x="476" y="118" class="small">SDK</text>
+            </svg>
+            <p>
+              The browser never talks to Google directly. It sends a captured
+              frame, a file or a question to the local Node server; the server
+              authenticates with Google, asks Gemini for
+              <strong>structured JSON</strong>, validates it and returns only what
+              the page needs. Voice works the same way: recognized text goes to
+              the server, the answer comes back as text, and the server asks
+              Cloud Text-to-Speech for audio that the browser plays.
+            </p>
+            <ol class="flow">
+              <li>You open the camera or upload a file.</li>
+              <li>The scanner waits for a still object and captures one frame.</li>
+              <li>The frame (or file) goes to <code>server.js</code>.</li>
+              <li>The server validates it and calls Gemini with a schema.</li>
+              <li>Gemini returns JSON: object, person or document.</li>
+              <li>The page renders the result; Charon introduces it.</li>
+              <li>You ask questions by voice; answers are spoken and shown.</li>
+            </ol>
+          </section>
+
+          <section id="structure">
+            <p class="step">03 / THE FILES</p>
+            <h2>Project structure.</h2>
+            <p>Every important file, in the order you might read them.</p>
+<pre class="tree"><b>ucenth-vision-intelligence/</b>
+│
+├── <b>index.html</b>            <i>The scanner page. Structural comments explain each region.</i>
+├── <b>style.css</b>             <i>Layout, tokens, responsive result layout.</i>
+├── <b>appearance.css / .js</b>  <i>Light/dark theme tokens and the confirmation chime.</i>
+├── <b>script.js</b>             <i>Camera → stability → capture → /api/identify → result.</i>
+├── <b>voice.js / voice.css</b>  <i>Hands-free conversation: listen, think, speak, timeouts.</i>
+├── <b>document.js / .css</b>    <i>Document result, Original / English viewer, page navigation.</i>
+├── <b>server.js</b>             <i>Local HTTP server: allowlisted files, routes, validation.</i>
+│
+├── <b>lib/</b>
+│   ├── <b>stability.js</b>        <i>Motion-based "hold still" detection (no ML).</i>
+│   ├── <b>identity-prompt.js</b>  <i>The identification prompt and JSON schema.</i>
+│   ├── <b>gemini.js</b>           <i>Gemini call with ADC; validates structured output.</i>
+│   ├── <b>conversation.js</b>     <i>Follow-up answers and Charon speech.</i>
+│   ├── <b>voice-routes.js</b>     <i>/api/follow-up and /api/speech with bounds.</i>
+│   ├── <b>document.js</b>         <i>Magic bytes, PDF.js, mammoth, one bounded analysis.</i>
+│   ├── <b>document-routes.js</b>  <i>/api/document, raw body, in memory.</i>
+│   └── <b>particle-presence.js</b><i> WebGL2 particles driven by an AnalyserNode.</i>
+│
+├── <b>test/</b>                <i>Unit tests (node --test) and Chrome tests (Playwright).</i>
+├── <b>scripts/</b>             <i>Release allowlist, secret scan, ZIP preparation.</i>
+├── <b>how-to.html</b>          <i>This guide (how-to.css, how-to.js).</i>
+├── <b>.env.example</b>         <i>The only setting you need: your project ID.</i>
+└── <b>README.md · ARCHITECTURE.md · LICENSE · THIRD-PARTY-NOTICES.md</b></pre>
+            <div class="callout try">
+              <strong>Try this</strong>
+              <p>
+                Open <code>script.js</code> and search for the word
+                <code>generation</code>. Count how many places check it. That
+                single counter is what stops an old scan from overwriting a new one.
+              </p>
+            </div>
+          </section>
+
+          <section id="run">
+            <p class="step">04 / INSTALL</p>
+            <h2>Run it locally.</h2>
+            <p>
+              You need a computer with a webcam, current Google Chrome, Node.js
+              22.19 or newer (release testing used Node 26.5.0 on Windows), a
+              Google account, and a Google Cloud project with billing. Cloud
+              inference can incur charges; set a
+              <a href="https://cloud.google.com/billing/docs/how-to/budgets" target="_blank" rel="noopener noreferrer">billing budget alert</a>.
+            </p>
+            <h3>1. Get the source</h3>
+            <p>Download the ZIP from the UCENTH website or GitHub, or clone:</p>
+            <div class="command wrap">
+              <pre><code>git clone https://github.com/Ucenth/ucenth-vision-intelligence.git
+cd ucenth-vision-intelligence</code></pre>
+            </div>
+            <p>
+              Open a terminal in the folder that contains <code>package.json</code>.
+              On Windows, right-click a blank area of the folder and choose
+              <strong>Open in Terminal</strong>.
+            </p>
+            <h3>2. Install Node.js and the dependencies</h3>
+            <p>Install an LTS release from <a href="https://nodejs.org/en/download" target="_blank" rel="noopener noreferrer">nodejs.org</a>, reopen the terminal, then:</p>
+            <div class="command">
+              <pre><code>node --version
+npm ci</code></pre>
+            </div>
+            <p>
+              <code>npm ci</code> installs the exact versions in
+              <code>package-lock.json</code>. If PowerShell refuses
+              <code>npm.ps1</code>, use <code>npm.cmd</code>; there is no need to
+              change your execution policy.
+            </p>
+            <h3>3. Create a Google Cloud project and enable two APIs</h3>
+            <ol>
+              <li>Sign in to <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer">Google Cloud Console</a>, create or pick a project, and copy its <strong>Project ID</strong> (not the display name).</li>
+              <li>Link a billing account.</li>
+              <li>Install the <a href="https://cloud.google.com/sdk/docs/install" target="_blank" rel="noopener noreferrer">Google Cloud CLI</a> and reopen the terminal.</li>
+            </ol>
+            <p>
+              Run the following one command at a time, in order. The commands are
+              shown for Windows PowerShell; on macOS or Linux type
+              <code>gcloud</code> wherever you see <code>gcloud.cmd</code>.
+              Replace <code>YOUR_PROJECT_ID</code> with the Project ID you copied.
+            </p>
+            <h4>Step 3a — Sign in to the CLI</h4>
+            <div class="command"><pre><code>gcloud.cmd auth login</code></pre></div>
+            <p>
+              A browser window opens. Sign in with the Google account that owns
+              the project. Back in the terminal you should see
+              <code>You are now logged in as [you@example.com]</code>.
+            </p>
+            <h4>Step 3b — See the projects your account can use</h4>
+            <div class="command"><pre><code>gcloud.cmd projects list</code></pre></div>
+            <p>
+              The CLI prints one line per project with three columns:
+              <code>PROJECT_ID</code>, <code>NAME</code> and
+              <code>PROJECT_NUMBER</code>. Only the first column is what
+              UCENTH Vision Intelligence needs. The name is a friendly label you can change
+              at any time and the number is an internal identifier; the
+              <strong>Project ID</strong> is the permanent, unique ID that
+              commands, <code>.env</code> and billing all refer to. Find the
+              project you created in step 1 and copy its PROJECT_ID exactly.
+              If the list is empty, create a project in the console first.
+            </p>
+            <h4>Step 3c — Tell the CLI which project to use</h4>
+            <div class="command"><pre><code>gcloud.cmd config set project YOUR_PROJECT_ID</code></pre></div>
+            <p>
+              Expected: <code>Updated property [core/project].</code> If it says
+              the project was not found, check that you pasted the Project ID,
+              not the project name.
+            </p>
+            <h4>Step 3d — Check whether the Agent Platform API is already enabled</h4>
+            <p>
+              <code>aiplatform.googleapis.com</code> is the service ID of the
+              <strong>Agent Platform API</strong> (its older name in the console
+              was Vertex AI API). It serves Gemini. This command lists it only if
+              it is enabled:
+            </p>
+            <div class="command wrap"><pre><code>gcloud.cmd services list --enabled --filter="config.name:aiplatform.googleapis.com"</code></pre></div>
+            <p>
+              If you see a line like
+              <code>aiplatform.googleapis.com  Agent Platform API</code> it is
+              already enabled and you can skip to step 3g. If the output is
+              <code>Listed 0 items.</code> it is not enabled yet.
+            </p>
+            <h4>Step 3e — Enable the Agent Platform API</h4>
+            <div class="command"><pre><code>gcloud.cmd services enable aiplatform.googleapis.com</code></pre></div>
+            <p>
+              Expected: <code>Operation "operations/…" finished successfully.</code>
+              This can take up to a minute. A "permission denied" error means
+              your account cannot enable services on this project; ask the
+              project owner for the <strong>Service Usage Admin</strong> role.
+              A billing error means the project has no billing account linked
+              yet (step 2 above).
+            </p>
+            <h4>Step 3f — Confirm it is enabled</h4>
+            <p>Run the check again; the API must now be listed:</p>
+            <div class="command wrap"><pre><code>gcloud.cmd services list --enabled --filter="config.name:aiplatform.googleapis.com"</code></pre></div>
+            <h4>Step 3g — Check the Text-to-Speech API (the Charon voice)</h4>
+            <p>
+              <code>texttospeech.googleapis.com</code> serves the Charon voice.
+              Same check:
+            </p>
+            <div class="command wrap"><pre><code>gcloud.cmd services list --enabled --filter="config.name:texttospeech.googleapis.com"</code></pre></div>
+            <p>
+              If it prints <code>texttospeech.googleapis.com  Cloud Text-to-Speech API</code>
+              it is enabled; skip to step 4. If it prints
+              <code>Listed 0 items.</code> continue.
+            </p>
+            <h4>Step 3h — Enable the Text-to-Speech API</h4>
+            <div class="command"><pre><code>gcloud.cmd services enable texttospeech.googleapis.com</code></pre></div>
+            <h4>Step 3i — Confirm both APIs together</h4>
+            <div class="command wrap"><pre><code>gcloud.cmd services list --enabled --filter="config.name:(aiplatform.googleapis.com OR texttospeech.googleapis.com)"</code></pre></div>
+            <p>
+              You should now see two lines, one for each API. That is the proof
+              the project is ready; nothing needs to be enabled in the console.
+            </p>
+            <details>
+              <summary>Prefer the console instead of the terminal?</summary>
+              <p>
+                With your project selected at the top of the console, open
+                <a href="https://console.cloud.google.com/apis/library/aiplatform.googleapis.com" target="_blank" rel="noopener noreferrer">Agent Platform API in the API Library</a>
+                and choose <strong>Enable</strong>, then do the same for the
+                <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener noreferrer">Cloud Text-to-Speech API</a>.
+                The button and the command do exactly the same thing.
+              </p>
+            </details>
+            <h3>4. Sign in for the application (ADC)</h3>
+            <p>
+              <strong>ADC (Application Default Credentials)</strong> is Google's
+              mechanism for letting server-side code authenticate without placing
+              credentials in your project files. The CLI stores a token in your
+              user profile; Google's SDK finds it automatically.
+            </p>
+            <p class="command-label">Windows PowerShell</p>
+            <div class="command wrap">
+              <pre><code>gcloud.cmd auth application-default login
+gcloud.cmd auth application-default set-quota-project YOUR_PROJECT_ID</code></pre>
+            </div>
+            <p class="command-label">macOS / Linux</p>
+            <div class="command wrap">
+              <pre><code>gcloud auth application-default login
+gcloud auth application-default set-quota-project YOUR_PROJECT_ID</code></pre>
+            </div>
+            <details>
+              <summary>Why are there two sign-ins?</summary>
+              <p>
+                <code>gcloud auth login</code> authorizes the CLI commands you type.
+                <code>gcloud auth application-default login</code> authorizes
+                applications that use ADC, such as this Node server. See
+                <a href="https://cloud.google.com/docs/authentication/set-up-adc-local-dev-environment" target="_blank" rel="noopener noreferrer">Google's local ADC guide</a>.
+              </p>
+            </details>
+            <h3>5. Create .env and start</h3>
+            <p class="command-label">Windows PowerShell</p>
+            <div class="command"><pre><code>Copy-Item .env.example .env</code></pre></div>
+            <p class="command-label">macOS / Linux</p>
+            <div class="command"><pre><code>cp .env.example .env</code></pre></div>
+            <p>Edit <code>.env</code> so it contains your own Project ID (file content, not a command):</p>
+            <div class="command"><pre><code>GOOGLE_CLOUD_PROJECT=your-project-id
+PORT=3000</code></pre></div>
+            <div class="command"><pre><code>npm start</code></pre></div>
+            <p>
+              Open <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer">http://localhost:3000</a> in
+              Chrome. Do not double-click <code>index.html</code>: the page needs
+              its local server. Press Ctrl+C in the terminal to stop.
+              <code>npm run dev</code> restarts Node when server files change.
+            </p>
+            <h3>6. Your first scan</h3>
+            <ol>
+              <li>Choose <strong>Open Camera</strong> and allow camera access.</li>
+              <li>Keep the frame empty for a moment (calibration).</li>
+              <li>Bring a book, bottle, phone or keyboard into the center and hold still for 3 · 2 · 1.</li>
+              <li>Read the result. Allow the microphone when Charon asks what you would like to know.</li>
+              <li>Ask a question, then stay quiet for five seconds and watch the conversation pause.</li>
+            </ol>
+            <div class="callout mistake">
+              <strong>Common mistake</strong>
+              <p>
+                Pasting an access token or a service-account JSON into
+                <code>.env</code>. This project needs neither. ADC keeps the
+                credential outside the repository, where Git cannot commit it.
+              </p>
+            </div>
+          </section>
+
+          <!-- ================= CAMERA ================= -->
+          <section id="webcam">
+            <p class="step">05 / CAMERA</p>
+            <h2>Access the webcam.</h2>
+            <h4>What this does</h4>
+            <p>Asks the browser for the camera and shows the live stream in a <code>&lt;video&gt;</code> element.</p>
+            <h4>Why we need it</h4>
+            <p>
+              Browsers only grant camera access from a secure context (localhost or
+              HTTPS) and after a user gesture, so the request runs from the
+              <strong>Open Camera</strong> click. The stream stays inside the
+              browser; nothing leaves until a frame is captured.
+            </p>
+            <div class="command" data-source-example="camera-access">
+              <span class="file">script.js · startCamera()</span>
+              <pre><code>const media = await navigator.mediaDevices.getUserMedia({
+  audio: false,
+  video: {
+    width: { ideal: 1280 },
+    height: { ideal: 960 },
+    facingMode: "environment",
+  },
+});
+if (token !== generation) {
+  media.getTracks().forEach((t) =&gt; t.stop());
+  return;
+}
+stream = media;
+video.srcObject = media;
+await video.play();</code></pre>
+            </div>
+            <h4>What happens next</h4>
+            <p>
+              A timer starts calling <code>analyzeFrame()</code> ten times a second.
+              The <code>token !== generation</code> check matters: if the user
+              pressed Stop while the permission prompt was open, the late stream is
+              closed immediately instead of switching the camera back on.
+            </p>
+            <div class="callout mistake">
+              <strong>Common mistake</strong>
+              <p>
+                Forgetting to stop the tracks. Setting <code>video.srcObject = null</code>
+                hides the picture, but the camera light stays on until every track's
+                <code>stop()</code> is called (see <code>stopStream()</code>).
+              </p>
+            </div>
+          </section>
+
+          <section id="stability">
+            <p class="step">06 / CAMERA</p>
+            <h2>Detect a stable object.</h2>
+            <h4>What this does</h4>
+            <p>Decides when something has been placed in the frame and held still enough to photograph.</p>
+            <h4>Why we need it</h4>
+            <p>
+              A scanner that captures on a button press needs two hands. Instead,
+              each frame's center crop is drawn into a 48×48 canvas, converted to
+              grayscale, and compared with the previous frame and with the empty
+              baseline. No machine learning: just arithmetic that any laptop runs
+              at ten frames a second.
+            </p>
+            <div class="command" data-source-example="stability-update">
+              <span class="file">lib/stability.js · StabilityTracker.update()</span>
+              <pre><code>const motion = difference(frame, this.previous);
+const entered = difference(frame, this.baseline) &gt; 0.055;
+this.previous = frame.slice();
+const drift = this.anchor ? difference(frame, this.anchor) : 0;
+// Allow small hand tremor and sensor noise; substantial motion or sustained
+// displacement from the lock anchor still cancels the countdown.
+if (!entered || motion &gt; 0.065 || drift &gt; 0.11) {
+  const cancelled = this.countdownAt !== null;
+  this.stableSince = null;
+  this.countdownAt = null;
+  this.anchor = null;
+  return { state: entered ? "moving" : "waiting", cancelled };
+}
+if (this.stableSince === null) {
+  this.stableSince = time;
+  this.anchor = frame.slice();
+}
+const elapsed = time - this.stableSince;
+if (elapsed &lt; 400) return { state: "found" };
+if (elapsed &lt; 1100) return { state: "steady" };
+if (this.countdownAt === null) this.countdownAt = time;
+const remaining = 3 - Math.floor((time - this.countdownAt) / 700);
+return remaining &gt; 0
+  ? { state: "locking", remaining }
+  : { state: "capture" };</code></pre>
+            </div>
+            <h4>What happens next</h4>
+            <p>
+              The states become the labels you see (SHOW ME AN OBJECT, HOLD STEADY,
+              LOCKING 3 · 2 · 1) and <code>capture</code> triggers the photograph.
+            </p>
+            <div class="callout try">
+              <strong>Try this</strong>
+              <p>
+                Change the countdown from 3 seconds to 5. In
+                <code>lib/stability.js</code>, the countdown is
+                <code>3 - Math.floor((time - this.countdownAt) / 700)</code>: three
+                steps of 700 ms. Change <code>3</code> to <code>5</code> (and the
+                unit test in <code>test/core.test.js</code> that expects
+                <code>[3, 2, 1]</code>), then run <code>npm test</code>.
+              </p>
+            </div>
+          </section>
+
+          <section id="capture">
+            <p class="step">07 / CAMERA</p>
+            <h2>Capture a frame.</h2>
+            <h4>What this does</h4>
+            <p>Copies one frame of the video onto a canvas and turns it into a JPEG.</p>
+            <h4>Why we need it</h4>
+            <p>
+              A <code>&lt;video&gt;</code> element cannot be uploaded. A canvas gives
+              actual pixels that <code>toDataURL()</code> can encode as JPEG. The
+              request starts <em>before</em> the visual scan effect is drawn, so the
+              effect can never alter what Gemini receives.
+            </p>
+            <div class="command" data-source-example="camera-capture">
+              <span class="file">script.js · captureSource()</span>
+              <pre><code>capture
+  .getContext("2d")
+  .drawImage(source, ...region, 0, 0, capture.width, capture.height);
+const image = capture.toDataURL("image/jpeg", 0.88);
+capture.hidden = false;
+video.hidden = true;
+$("empty-state").hidden = true;
+// Send the untouched captured frame before scan effects or optional visual work.
+const token = generation;
+controller = new AbortController();
+timeout = setTimeout(() =&gt; controller?.abort(), 30000);
+const pendingResponse = fetch("/api/identify", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ image }),
+  signal: controller.signal,
+});
+pendingResponse.catch(() =&gt; {}); // Still awaited below; avoid an unhandled rejection if an effect throws.
+stopStream();</code></pre>
+            </div>
+            <h4>What happens next</h4>
+            <p>
+              The camera is released, the scan animation plays on <code>#edges</code>,
+              and when the response arrives <code>displayResult()</code> routes it to
+              the object, person or document presentation.
+            </p>
+            <ol class="flow">
+              <li>getUserMedia()</li>
+              <li>&lt;video&gt;</li>
+              <li>stability detection</li>
+              <li>3 · 2 · 1</li>
+              <li>canvas.drawImage()</li>
+              <li>JPEG</li>
+              <li>Node backend</li>
+              <li>Gemini</li>
+            </ol>
+          </section>
+
+          <!-- ================= AI ================= -->
+          <section id="gemini">
+            <p class="step">08 / AI</p>
+            <h2>Connect Gemini safely.</h2>
+            <p>The most important lesson in this project. Compare the two shapes:</p>
+            <svg class="diagram" viewBox="0 0 720 150" role="img" aria-labelledby="gemini-title">
+              <title id="gemini-title">Right: browser to your server to Gemini. Wrong: browser holding credentials calling Gemini.</title>
+              <text x="10" y="22">RIGHT</text>
+              <rect x="10" y="34" width="150" height="40" rx="4" /><text x="24" y="59">Browser</text>
+              <path d="M160 54h40" /><rect x="200" y="34" width="170" height="40" rx="4" class="accent" /><text x="214" y="59">Your Node server</text>
+              <path d="M370 54h40" /><rect x="410" y="34" width="120" height="40" rx="4" /><text x="424" y="59">Gemini</text>
+              <text x="200" y="98" class="small">Google auth (ADC) lives here · JSON validated here</text>
+              <g class="bad">
+                <text x="10" y="126">WRONG</text>
+                <rect x="10" y="132" width="220" height="14" rx="2" /><text x="16" y="143" class="small">Browser JS + secret API key</text>
+                <path d="M230 139h40" /><rect x="270" y="132" width="90" height="14" rx="2" /><text x="280" y="143" class="small">Gemini</text>
+                <text x="380" y="143" class="small">← anyone can view source and take the key</text>
+              </g>
+            </svg>
+            <div class="callout why">
+              <strong>Why use a backend?</strong>
+              <p>
+                Because browser code is visible to every visitor. Putting cloud
+                credentials in <code>script.js</code> would expose them to anyone who
+                opens DevTools, and they could run up your bill. The Node server is
+                the only process that authenticates with Google.
+              </p>
+            </div>
+            <h4>Code</h4>
+            <div class="command" data-source-example="gemini-client">
+              <span class="file">lib/gemini.js · createGeminiDetector()</span>
+              <pre><code>if (!process.env.GOOGLE_CLOUD_PROJECT?.trim())
+  throw new Error(
+    "Google project configuration is missing; check credentials setup.",
+  );
+client ||= new GoogleGenAI({
+  enterprise: true,
+  project: process.env.GOOGLE_CLOUD_PROJECT,
+  location: "global",
+  apiVersion: "v1beta1",
+  httpOptions: { timeout: 25000, retryOptions: { attempts: 1 } },
+});</code></pre>
+            </div>
+            <p>
+              There is no key in this code. <code>GoogleGenAI</code> discovers your
+              ADC sign-in on the machine. The timeout and single attempt mean a hung
+              request cannot bill twice.
+            </p>
+            <div class="callout mistake">
+              <strong>Common mistake</strong>
+              <p>Putting a Gemini API key directly in frontend JavaScript, or committing a <code>.env</code> file that contains one.</p>
+            </div>
+          </section>
+
+          <section id="send-image">
+            <p class="step">09 / AI</p>
+            <h2>Send an image to Gemini.</h2>
+            <h4>What this does</h4>
+            <p>The server decodes the upload to prove it is a real image, then sends the original bytes to Gemini with the prompt and schema.</p>
+            <div class="command" data-source-example="gemini-request">
+              <span class="file">lib/gemini.js · createGeminiDetector()</span>
+              <pre><code>const response = await client.models.generateContent({
+  model: "gemini-3.8-flash",
+  contents: [
+    {
+      role: "user",
+      parts: [
+        {
+          text: `${prompt} Do not use external search; evidence_urls must be empty. Keep likely_product at the broader family when the exact model is uncertain. Do not infer publisher, ingredients, performance specifications or other facts absent from the image.`,
+        },
+        { inlineData: { mimeType, data: content.toString("base64") } },
+      ],
+    },
+  ],
+  config: {
+    systemInstruction,
+    responseMimeType: "application/json",
+    responseJsonSchema: schema,
+    temperature: 0.1,
+    maxOutputTokens: 4096,
+    thinkingConfig: { thinkingLevel: "LOW" },
+  },
+});
+if (response.candidates?.[0]?.finishReason !== "STOP")
+  throw new Error("Incomplete identity response");
+return summarizeIdentity(JSON.parse(response.text));</code></pre>
+            </div>
+            <h4>What happens next</h4>
+            <p>
+              <code>summarizeIdentity()</code> checks every required key against the
+              schema and applies cautious naming rules before the browser sees anything.
+              The route wraps failures into safe messages; provider error text never
+              reaches the page.
+            </p>
+            <p>
+              <strong>Asynchronous requests:</strong> identification takes 3–8 seconds.
+              The browser keeps rendering while <code>fetch()</code> waits, and an
+              <code>AbortController</code> lets a reset cancel the request instead of
+              leaving it to finish in the background.
+            </p>
+          </section>
+
+          <section id="prompts">
+            <p class="step">10 / AI</p>
+            <h2>Design structured prompts.</h2>
+            <p>Ask a model for prose and you get something like:</p>
+            <div class="command wrap"><pre><code>"Looks like maybe an iPhone, possibly a 13 Pro… hard to say from this angle."</code></pre></div>
+            <p>Ask for structured output and you get something a page can render:</p>
+            <div class="command"><pre><code>{
+  "object_category": "smartphone",
+  "likely_brand": "Apple",
+  "likely_product": "iPhone Pro series",
+  "likely_model": "",
+  "confidence": "medium",
+  "needs_another_view": true,
+  "requested_view": "Show the rear camera module clearly."
+}</code></pre></div>
+            <p>
+              The schema in <code>lib/identity-prompt.js</code> is passed as
+              <code>responseJsonSchema</code>, so Gemini fills exactly these keys. Enums
+              pin the values the interface switches on; <code>required</code>
+              guarantees every key exists, so validation is a loop, not guesswork.
+            </p>
+            <h4>The prompt's architecture</h4>
+            <ol>
+              <li><strong>Subject selection.</strong> What did the user intentionally present? Framing, size and focus decide.</li>
+              <li><strong>People.</strong> A person can be the subject, but identity comes only from context, never a face.</li>
+              <li><strong>Routing.</strong> <code>subject_type</code> is person, object, document or scene.</li>
+              <li><strong>Conservative naming.</strong> Separate product family from exact model; never invent numbers or unseen text.</li>
+              <li><strong>Output.</strong> Only the JSON, with empty values for the unknown.</li>
+            </ol>
+            <div class="command wrap" data-source-example="prompt-presented-product">
+              <span class="file">lib/identity-prompt.js · systemInstruction (excerpt)</span>
+              <pre><code>A product held toward the camera or presented in the hands is an object subject:
+hands, arms or clothing around a presented product do not make the holder the subject,
+especially when the face is absent or not the focus.</code></pre>
+            </div>
+            <p>
+              That sentence exists because a person holding a product is the most
+              common webcam scan, and early tests sometimes returned "Person" for a
+              bottle held to the camera. Every rule in the prompt was added after a
+              real failure like that. Text inside an image is declared to be evidence,
+              never instructions, which defends against a label that says "ignore your
+              rules".
+            </p>
+            <div class="callout try">
+              <strong>Try this</strong>
+              <p>
+                Change the prompt so Vision returns only three visible details:
+                in <code>lib/identity-prompt.js</code> add "Return at most three
+                visible_identifying_features" to the system instruction, restart
+                with <code>npm start</code>, and scan something.
+              </p>
+            </div>
+          </section>
+
+          <section id="uncertainty">
+            <p class="step">11 / AI</p>
+            <h2>Handle uncertainty.</h2>
+            <p>
+              A model will happily name an exact phone model from a blurry frame.
+              The code refuses to pass that on unless the model is confident and
+              says nothing is uncertain, and it turns phone ambiguity into a request
+              for another view even when the model forgot to set the flag.
+            </p>
+            <div class="command" data-source-example="uncertainty-rules">
+              <span class="file">lib/gemini.js · summarizeIdentity()</span>
+              <pre><code>const model =
+  value.confidence === "high" &amp;&amp; !uncertainty &amp;&amp; !value.needs_another_view
+    ? clean(value.likely_model)
+    : "";
+const product =
+  clean(value.likely_product) || category || "Unidentified object";
+let name =
+  brand &amp;&amp; !product.toLowerCase().includes(brand.toLowerCase())
+    ? `${brand} ${product}`
+    : product;
+if (
+  model &amp;&amp;
+  !name.toLowerCase().includes(model.toLowerCase()) &amp;&amp;
+  !model.toLowerCase().includes(product.toLowerCase())
+)
+  name += ` · ${model}`;
+const needsAnotherView =
+  value.needs_another_view ||
+  !!(uncertainty &amp;&amp; /phone|smartphone/i.test(category));</code></pre>
+            </div>
+            <p>
+              In the interface, MORE DETAIL NEEDED and a "Next view" instruction are
+              the honest result. Confidence in this project describes the specificity
+              the model claims, not a probability.
+            </p>
+            <h4>Error handling is part of the feature</h4>
+            <table>
+              <tr><th>Failure</th><th>What the user sees</th><th>Where</th></tr>
+              <tr><td>Gemini unavailable or quota exhausted</td><td>A readable message and Scan another object</td><td><code>server.js</code> catch block</td></tr>
+              <tr><td>Charon unavailable</td><td>The written answer with a voice-unavailable notice</td><td><code>voice.js</code> speak()</td></tr>
+              <tr><td>Microphone denied</td><td>Typed questions still work</td><td><code>voice.js</code> listen()</td></tr>
+              <tr><td>WebGL unavailable</td><td>A simpler audio-reactive canvas</td><td><code>lib/particle-presence.js</code></td></tr>
+              <tr><td>Unsupported or oversized document</td><td>The reason, in plain words</td><td><code>lib/document.js</code></td></tr>
+            </table>
+          </section>
+
+          <!-- ================= PEOPLE ================= -->
+          <section id="people">
+            <p class="step">12 / PEOPLE</p>
+            <h2>Understand people from context.</h2>
+            <ol class="flow">
+              <li>Face alone → PERSON DETECTED → no identity guess</li>
+              <li>Context + person → identity may be established</li>
+            </ol>
+            <p>
+              UCENTH Vision Intelligence contains no face recognition, no face embeddings and no
+              celebrity dataset. A person is identified only when
+              <strong>non-biometric context inside the image</strong> is clearly
+              associated with them: a caption directly under the photograph, a
+              profile or leadership card, an article heading, a name badge. A name that
+              merely appears somewhere on a screenshot is not enough, and with several
+              names or several people nothing is assigned to faces.
+            </p>
+            <div class="command" data-source-example="person-identity">
+              <span class="file">lib/gemini.js · summarizeIdentity()</span>
+              <pre><code>// A person's name survives only with an explicit non-biometric source and evidence.
+const person = value.subject_type === "person";
+const identityName = person ? clean(value.person_identity_name) : "";
+const identityEvidence = person ? clean(value.person_identity_evidence) : "";
+const identitySource =
+  person &amp;&amp; value.person_identity_source !== "none" ? value.person_identity_source : "none";
+const identityEstablished =
+  person &amp;&amp;
+  value.person_identity_established === true &amp;&amp;
+  !!identityName &amp;&amp;
+  identitySource !== "none" &amp;&amp;
+  !!identityEvidence;</code></pre>
+            </div>
+            <p>
+              Even if the model writes a name, it is dropped unless it also names the
+              source (caption, visible text or page context) and quotes the evidence.
+              During a conversation, if you say "this is Jensen Huang", that name becomes
+              <em>user-provided</em> context (<code>identitySource: "user_context"</code>)
+              for later answers; it is never promoted to a verified identity.
+            </p>
+            <div class="callout why">
+              <strong>Why?</strong>
+              <p>
+                Identifying strangers from their faces is a privacy harm and, in many
+                places, unlawful. Reading a caption is what a human would do. The
+                distinction is enforced in code, not just requested in the prompt.
+              </p>
+            </div>
+          </section>
+
+          <!-- ================= DOCUMENTS ================= -->
+          <section id="pdf">
+            <p class="step">13 / DOCUMENTS</p>
+            <h2>Read PDFs.</h2>
+            <ol class="flow">
+              <li>PDF with selectable text → PDF.js extracts the text locally</li>
+              <li>PDF with scanned pages → the PDF is attached so Gemini reads the pages</li>
+              <li>DOCX → mammoth → structured text</li>
+              <li>Camera / JPG / PNG → Gemini decides it is a document</li>
+            </ol>
+            <p>
+              Why not screenshot every file? Because a text PDF already contains its
+              text. Extracting it locally is instant, free, and lets a 60-page file
+              travel as text instead of 60 images. Only pages that have no text
+              (scans) need the model's reading.
+            </p>
+            <div class="command" data-source-example="pdf-extraction">
+              <span class="file">lib/document.js · extractPdf()</span>
+              <pre><code>const task = pdfjs.getDocument({
+  data: new Uint8Array(buffer),
+  isEvalSupported: false,
+  disableFontFace: true,
+  useSystemFonts: false,
+  stopAtErrors: true,
+  verbosity: 0,
+});</code></pre>
+            </div>
+            <p>
+              Limits protect cost and memory: 15 MB, 60 pages, at most 25 scanned
+              pages, about 200,000 characters. Larger files receive a clear message
+              rather than a silent cut.
+            </p>
+          </section>
+
+          <section id="docx">
+            <p class="step">14 / DOCUMENTS</p>
+            <h2>Read Word documents.</h2>
+            <p>
+              A <code>.docx</code> file is an <strong>Open XML package</strong>: a ZIP
+              archive containing XML parts such as <code>word/document.xml</code>.
+              mammoth reads that XML and produces simple HTML. UCENTH Vision Intelligence extracts
+              headings, paragraphs, lists and tables, and reduces the HTML to plain text
+              with structure markers a model understands.
+            </p>
+            <div class="command" data-source-example="docx-extraction">
+              <span class="file">lib/document.js · extractDocx()</span>
+              <pre><code>try {
+  result = await mammoth.convertToHtml(
+    { buffer },
+    { convertImage: mammoth.images.imgElement(async () =&gt; ({ src: "" })) },
+  );
+} catch {
+  return {
+    error:
+      "This Word file could not be read. Save it as .docx and try again.",
+  };
+}
+const text = htmlToText(result.value);</code></pre>
+            </div>
+            <p>
+              What is deliberately <strong>not</strong> executed: macros, OLE objects,
+              scripts and embedded programs. mammoth never runs them, and embedded images
+              are dropped by that <code>imgElement</code> callback.
+            </p>
+          </section>
+
+          <section id="translate">
+            <p class="step">15 / DOCUMENTS</p>
+            <h2>Translate documents.</h2>
+            <ol class="flow">
+              <li>Original document</li>
+              <li>Language detection (name + BCP-47 code)</li>
+              <li>English? YES → no translation</li>
+              <li>English? NO → English translation, original preserved</li>
+            </ol>
+            <p>
+              The original is always kept: it is the truth, and a translation is an
+              interpretation. The viewer shows Original and English as tabs. Direction
+              and language follow the text shown: an Arabic original renders
+              <code>dir="rtl"</code>, its English translation <code>dir="ltr"</code>.
+              CJK languages get a font stack with full glyph coverage.
+            </p>
+            <div class="command" data-source-example="viewer-direction">
+              <span class="file">document.js · buildViewer() paint()</span>
+              <pre><code>// Direction and language follow the text actually shown; translations are never mirrored.
+panel.setAttribute("dir", english ? "ltr" : data.language.direction);
+panel.setAttribute("lang", english ? "en" : data.language.code);
+panel.dataset.script = english ? "" : LANGUAGE_FONT(data.language.code);</code></pre>
+            </div>
+            <p>
+              Translation is bounded (about 20,000 characters in the first pass) and
+              further pages can be requested in conversation. Numbers, dates and
+              negations are checked in the real-document test suite, because a
+              translation that drops a "not" is worse than none.
+            </p>
+          </section>
+
+          <!-- ================= VOICE ================= -->
+          <section id="speech">
+            <p class="step">16 / VOICE</p>
+            <h2>Recognize speech.</h2>
+            <ol class="flow">
+              <li>Microphone</li>
+              <li>Chrome speech recognition</li>
+              <li>Recognized text</li>
+              <li>UCENTH server (/api/follow-up)</li>
+              <li>Gemini</li>
+            </ol>
+            <p>
+              Chrome's <code>SpeechRecognition</code> API turns speech into text. Be
+              honest with your users: it may send microphone audio to Google's speech
+              service. It is <strong>not</strong> offline speech recognition, and
+              UCENTH Vision Intelligence never claims it is. The app itself has no microphone-upload
+              endpoint and never records audio.
+            </p>
+            <div class="command" data-source-example="speech-recognition">
+              <span class="file">voice.js · listen()</span>
+              <pre><code>const recognition = new Recognition();
+c.recognition = recognition;
+recognition.lang = "en-US";
+recognition.interimResults = true;
+recognition.continuous = true;</code></pre>
+            </div>
+            <p>
+              Speech is confirmed by the recognizer's own classifier (held for 200 ms)
+              or by a transcript, never by microphone volume, so a loud room does not
+              look like a question.
+            </p>
+          </section>
+
+          <section id="charon">
+            <p class="step">17 / VOICE</p>
+            <h2>Generate Charon voice.</h2>
+            <ol class="flow">
+              <li>Gemini answer (text)</li>
+              <li>/api/speech → Cloud Text-to-Speech, voice en-US-Chirp3-HD-Charon</li>
+              <li>WAV audio (LINEAR16)</li>
+              <li>Browser: decodeAudioData() → playback</li>
+            </ol>
+            <div class="command" data-source-example="charon-synthesis">
+              <span class="file">lib/conversation.js · createSpeech()</span>
+              <pre><code>const response = await client.request({
+  url: "https://texttospeech.googleapis.com/v1/text:synthesize",
+  method: "POST",
+  timeout: 20000,
+  retry: false,
+  headers: { "x-goog-user-project": process.env.GOOGLE_CLOUD_PROJECT },
+  data: {
+    input: { text },
+    voice: { languageCode: "en-US", name: VOICE },
+    audioConfig: { audioEncoding: "LINEAR16" },
+  },
+});
+if (!response.data.audioContent)
+  throw new Error("Speech audio unavailable");
+return Buffer.from(response.data.audioContent, "base64");</code></pre>
+            </div>
+            <p>
+              Charon was chosen after measuring real latency: about 3.3 s on first use
+              and a warm median of about 1.7 s, faster and more natural than the
+              alternatives tried. Uncompressed WAV is requested because
+              <code>decodeAudioData()</code> handles it instantly, which matters for the
+              timing below. Charon speaks identifications, summaries and answers; it
+              never reads a whole document aloud.
+            </p>
+          </section>
+
+          <section id="conversation">
+            <p class="step">18 / VOICE</p>
+            <h2>Build hands-free conversation.</h2>
+            <ol class="flow">
+              <li>LISTENING</li>
+              <li>USER SPEAKING</li>
+              <li>THINKING (Gemini answers, Charon prepares)</li>
+              <li>VISION SPEAKING (text revealed as audio starts)</li>
+              <li>LISTENING again, or CONVERSATION PAUSED after 5 s of silence</li>
+            </ol>
+            <h4>Why recognition is off while Charon speaks</h4>
+            <p>
+              If the microphone stayed open, the speakers would play Charon's voice
+              straight back into speech recognition, which would transcribe it as a
+              new question, answer it, and loop forever. So the microphone is released
+              before playback and reopened only after playback ends plus a short echo
+              guard.
+            </p>
+            <div class="command" data-source-example="charon-playback">
+              <span class="file">voice.js · speak()</span>
+              <pre><code>activate(c);
+stopMic(c);
+c.outputAnalyser = audioContext.createAnalyser();
+c.outputAnalyser.fftSize = 2048;
+c.outputAnalyser.smoothingTimeConstant = 0.65;
+c.outputAnalyser.connect(audioContext.destination);
+c.playback = audioContext.createBufferSource();
+c.playback.buffer = audio;
+c.playback.connect(c.outputAnalyser);
+c.particles.connect(c.outputAnalyser, "charon");
+c.playback.onended = () =&gt; {
+  if (!valid(c, turn)) return;
+  c.playback.disconnect();
+  c.playback = null;
+  c.outputAnalyser?.disconnect();
+  c.outputAnalyser = null;
+  c.particles.disconnect();
+  returnToListening(c, turn);
+};
+c.ui.answer.textContent = text;
+c.pendingAnswer = null;
+state(c, "VISION_SPEAKING");
+c.ui.notice.textContent =
+  "Charon speaking · Microphone and speech recognition are stopped.";
+c.playback.start();</code></pre>
+            </div>
+            <h4>The five-second timeout</h4>
+            <p>
+              After Charon finishes, LISTENING waits up to five seconds for genuine
+              speech to <em>start</em>. If none comes, recognition and the microphone
+              tracks are stopped and the state becomes CONVERSATION PAUSED. It does not
+              restart on its own. This is about resources (an open microphone costs
+              CPU and battery), privacy (a microphone should not stay open indefinitely)
+              and experience (users should know when they are being listened to). Once
+              speech starts the timer is cancelled, so a long question is never cut off.
+            </p>
+            <h4>State management prevents races</h4>
+            <p>
+              Every conversation has a turn counter, and every async continuation
+              checks <code>valid(c, turn)</code> first. Reset during THINKING? The old
+              Gemini answer arrives, fails the check, and is ignored. Charon audio for a
+              previous object returns late? Ignored. This is the same idea as
+              <code>generation</code> in <code>script.js</code>, and it is cheaper and
+              safer than trying to cancel everything.
+            </p>
+            <div class="callout mistake">
+              <strong>Common mistake</strong>
+              <p>Leaving speech recognition active while text-to-speech plays.</p>
+            </div>
+          </section>
+
+          <!-- ================= VISUALS ================= -->
+          <section id="particles">
+            <p class="step">19 / VISUALS</p>
+            <h2>Build the particle presence.</h2>
+            <p>
+              The presence is 12,000 points on a sphere, uploaded to the GPU once. Each
+              frame a vertex shader moves every point according to four audio values
+              and time, so the CPU does almost nothing. Positions follow a Fibonacci
+              spiral, which spreads points evenly over a sphere.
+            </p>
+            <div class="command" data-source-example="particle-shader">
+              <span class="file">lib/particle-presence.js · vertex shader (excerpt)</span>
+              <pre><code>float bass=sqrt(uAudio.y),voice=sqrt(uAudio.z),air=sqrt(uAudio.w),energy=uAudio.x;
+float broad=sin(n.x*3.1+n.y*2.0+t*.65)*cos(n.z*2.7-t*.4);
+float flow=sin(n.y*6.0+n.x*3.0-t*1.1)*cos(n.z*4.0+t*.6);
+float fine=sin(n.x*25.0+n.z*17.0+t*2.1)*sin(n.y*19.0-t*1.7);
+float base=.055*sin(n.y*4.0+n.z*3.0+t*.23)+.035*cos(n.x*5.0-t*.18);
+float deformation=base+uMotion*(bass*.52*broad+voice*.38*flow+air*.11*fine);
+float breath=uMotion*.008*sin(t*.75);
+p*=1.0+deformation+breath+energy*mix(.025,.09,uMotion);</code></pre>
+            </div>
+            <p>
+              <code>sqrt()</code> flattens loud peaks so quiet speech still moves the
+              field. Bass drives a broad swell, the voice band rolling folds, the air
+              band fine shimmer; a twist and shear make speech fold the sphere rather
+              than inflate it. Quality tiers cap the pixel ratio, particle count and frame
+              rate (60 desktop, 30 mobile and low power, 20 with reduced motion), and a
+              Canvas 2D fallback keeps a real loudness response without WebGL.
+            </p>
+            <div class="callout try">
+              <strong>Try this</strong>
+              <p>
+                Change the particle density. In <code>lib/particle-presence.js</code>,
+                <code>resize()</code> sets <code>points</code> to 12000 on desktop and
+                6000 on mobile. Try 4000 and 20000 and watch the FPS in the metrics event.
+              </p>
+            </div>
+          </section>
+
+          <section id="audio-reactive">
+            <p class="step">20 / VISUALS</p>
+            <h2>Connect particles to real audio.</h2>
+            <ol class="flow">
+              <li>Microphone or Charon audio</li>
+              <li>Web Audio API</li>
+              <li>AnalyserNode</li>
+              <li>Frequency and amplitude data</li>
+              <li>WebGL particle deformation</li>
+            </ol>
+            <div class="command" data-source-example="audio-analysis">
+              <span class="file">lib/particle-presence.js · readAudio()</span>
+              <pre><code>analyser.getFloatTimeDomainData(timeData);
+analyser.getFloatFrequencyData(freqData);
+let sum = 0;
+for (const v of timeData) sum += v * v;
+const rms = Math.sqrt(sum / timeData.length);
+maxRms = Math.max(maxRms, rms);
+const band = (lo, hi) =&gt; {
+  const hz = context.sampleRate / analyser.fftSize;
+  let sum = 0,
+    n = 0;
+  for (
+    let i = Math.ceil(lo / hz);
+    i &lt; Math.min(freqData.length, Math.floor(hi / hz));
+    i++
+  ) {
+    sum += Math.pow(10, freqData[i] / 10);
+    n++;
+  }
+  return Math.sqrt(sum / Math.max(n, 1));
+};
+const gain = activeSource === "microphone" ? 2.5 : 1;
+raw = [
+  clamp(rms * 6 * gain),
+  clamp(band(70, 260) * 14 * gain),
+  clamp(band(260, 2500) * 25 * gain),
+  clamp(band(2500, 8500) * 42 * gain),
+];</code></pre>
+            </div>
+            <p>
+              The microphone stream is connected to an AnalyserNode but
+              <strong>not</strong> to the speakers, so it can be measured without
+              feedback. Charon's decoded buffer plays through its own AnalyserNode into
+              the speakers. The particles therefore react to what is actually happening,
+              not to a canned animation, and a noise gate measured in the first 450 ms
+              keeps a quiet room from looking like speech.
+            </p>
+          </section>
+
+          <!-- ================= SECURITY ================= -->
+          <section id="credentials">
+            <p class="step">21 / SECURITY</p>
+            <h2>Protect API credentials.</h2>
+            <ul>
+              <li>Credentials live only on the server, discovered through ADC. No key in any file.</li>
+              <li><code>.env</code> holds a project ID, not a secret, and is still ignored by Git.</li>
+              <li>The server serves an explicit allowlist of files. <code>lib/</code>, tests and <code>.env</code> are 404.</li>
+              <li>It binds to 127.0.0.1 and checks Host and Origin, so other websites in your browser cannot use it.</li>
+              <li>A strict Content-Security-Policy allows scripts only from the same origin.</li>
+            </ul>
+            <div class="command" data-source-example="local-boundary">
+              <span class="file">server.js</span>
+              <pre><code>res.setHeader(
+  "Content-Security-Policy",
+  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+);
+const host = req.headers.host;
+if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || ""))
+  return json(res, 403, { error: "Only local access is allowed." });</code></pre>
+            </div>
+            <p>
+              <strong>CORS, briefly:</strong> browsers block cross-origin requests by
+              default, and this server sends no <code>Access-Control-Allow-Origin</code>
+              header, so a page on another origin cannot read its responses. The
+              Origin and Sec-Fetch-Site checks add a second layer.
+            </p>
+          </section>
+
+          <section id="uploads">
+            <p class="step">22 / SECURITY</p>
+            <h2>Validate uploaded files.</h2>
+            <p>
+              A file extension and the browser's declared MIME type are labels anyone
+              can change. The real format is in the first bytes, the
+              <strong>magic bytes</strong>:
+            </p>
+            <div class="command" data-source-example="document-validation">
+              <span class="file">lib/document.js · sniff()</span>
+              <pre><code>if (buffer.length &gt; 4 &amp;&amp; buffer.subarray(0, 5).toString("latin1") === "%PDF-")
+  return "pdf";
+if (
+  buffer.length &gt; 3 &amp;&amp;
+  buffer[0] === 0xff &amp;&amp;
+  buffer[1] === 0xd8 &amp;&amp;
+  buffer[2] === 0xff
+)
+  return "image";
+if (
+  buffer.length &gt; 7 &amp;&amp;
+  buffer
+    .subarray(0, 8)
+    .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+)
+  return "image";
+if (
+  buffer.length &gt; 3 &amp;&amp;
+  buffer[0] === 0x50 &amp;&amp;
+  buffer[1] === 0x4b &amp;&amp;
+  buffer[2] === 0x03 &amp;&amp;
+  buffer[3] === 0x04
+) {
+  // A DOCX is a ZIP whose central directory names word/document.xml.
+  const tail = buffer
+    .subarray(Math.max(0, buffer.length - 512 * 1024))
+    .toString("latin1");
+  if (tail.includes("word/document.xml")) return "docx";
+}
+return null;</code></pre>
+            </div>
+            <p>
+              <code>validateFile()</code> then requires the detected format to agree with
+              both the declared type and the extension, and applies a per-format size
+              limit. Images are additionally decoded with sharp to prove they are images.
+              The file name is only ever displayed; it is never used as a path.
+            </p>
+            <div class="callout mistake">
+              <strong>Common mistake</strong>
+              <p>Trusting a file because its extension says <code>.pdf</code>.</p>
+            </div>
+          </section>
+
+          <section id="untrusted">
+            <p class="step">23 / SECURITY</p>
+            <h2>Handle untrusted documents.</h2>
+            <ul>
+              <li><strong>PDF script evaluation is disabled</strong> (<code>isEvalSupported: false</code>), and PDF.js is used only to count pages and extract text; no rendering or scripting sandbox is loaded.</li>
+              <li><strong>Word macros and embedded objects are never executed.</strong> mammoth reads XML; that is all.</li>
+              <li><strong>In-memory processing.</strong> The upload is a raw request body buffered up to the limit, parsed and forgotten. No temporary files exist, so nothing can be served or left behind.</li>
+              <li><strong>Limits</strong> on size, page count, scanned pages and text length stop a hostile 400-page file from reaching the model.</li>
+              <li><strong>Untrusted text.</strong> Extracted text is passed to Gemini labelled as data, and the prompt says it is never an instruction.</li>
+              <li><strong>No fetching.</strong> Links inside documents are never followed.</li>
+            </ul>
+            <p>
+              Everything the browser displays is set with <code>textContent</code>,
+              never <code>innerHTML</code>, so text from a document or a model cannot
+              inject markup into the page.
+            </p>
+          </section>
+
+          <!-- ================= BUILD YOUR OWN ================= -->
+          <section id="reuse-gemini">
+            <p class="step">24 / BUILD YOUR OWN</p>
+            <h2>Reuse Gemini in your project.</h2>
+            <p><strong>Minimum architecture:</strong> frontend → your backend → Gemini.</p>
+            <h3>Camera mini-lesson (frontend only)</h3>
+            <p>This is the capture feature on its own. It needs no server until the last line.</p>
+            <div class="command" data-simplified>
+              <span class="file">your page</span>
+              <pre><code>&lt;video id="cam" autoplay playsinline muted&gt;&lt;/video&gt;
+&lt;canvas id="shot" hidden&gt;&lt;/canvas&gt;
+&lt;button id="go"&gt;Open camera&lt;/button&gt; &lt;button id="snap"&gt;Capture&lt;/button&gt;
+&lt;script type="module"&gt;
+  const cam = document.getElementById("cam"), shot = document.getElementById("shot");
+  document.getElementById("go").onclick = async () => {
+    cam.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+  };
+  document.getElementById("snap").onclick = async () => {
+    shot.width = cam.videoWidth; shot.height = cam.videoHeight;
+    shot.getContext("2d").drawImage(cam, 0, 0);
+    const image = shot.toDataURL("image/jpeg", 0.88);
+    cam.srcObject.getTracks().forEach((t) => t.stop());
+    const result = await fetch("/api/identify", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image }) }).then((r) => r.json());
+    console.log(result);
+  };
+&lt;/script&gt;</code></pre>
+            </div>
+            <h3>Gemini mini-lesson (backend)</h3>
+            <p>One route that receives the image and returns structured JSON. Adapted from <code>server.js</code> and <code>lib/gemini.js</code>.</p>
+            <div class="command" data-simplified>
+              <span class="file">server.mjs</span>
+              <pre><code>import http from "node:http";
+import { GoogleGenAI } from "@google/genai";
+const ai = new GoogleGenAI({ enterprise: true, project: process.env.GOOGLE_CLOUD_PROJECT, location: "global" });
+const schema = { type: "object", properties: { name: { type: "string" }, confidence: { type: "string", enum: ["high", "medium", "low"] } }, required: ["name", "confidence"] };
+http.createServer(async (req, res) => {
+  if (req.method !== "POST" || req.url !== "/api/identify") { res.writeHead(404); return res.end(); }
+  let body = ""; for await (const chunk of req) body += chunk;
+  const data = JSON.parse(body).image.split(",")[1];           // strip the data-URL prefix
+  const r = await ai.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: [{ role: "user", parts: [{ text: "Name the object. Return JSON." }, { inlineData: { mimeType: "image/jpeg", data } }] }],
+    config: { responseMimeType: "application/json", responseJsonSchema: schema, temperature: 0.1 },
+  });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(r.text);
+}).listen(3000, "127.0.0.1");</code></pre>
+            </div>
+            <p>
+              Run it with <code>node --env-file=.env server.mjs</code> after the same ADC
+              sign-in as UCENTH Vision Intelligence. In a real project add what <code>server.js</code>
+              adds: size limits, image decoding, origin checks, safe errors and a static
+              allowlist.
+            </p>
+          </section>
+
+          <section id="reuse-voice">
+            <p class="step">25 / BUILD YOUR OWN</p>
+            <h2>Reuse voice in your project.</h2>
+            <p><strong>Pattern:</strong> speech recognition → question → backend → response → TTS.</p>
+            <div class="command" data-simplified>
+              <span class="file">your page</span>
+              <pre><code>const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const audioContext = new AudioContext();       // create inside a click handler
+async function askByVoice() {
+  const recognition = new Recognition();
+  recognition.lang = "en-US";
+  recognition.onresult = async (event) => {
+    const question = event.results[0][0].transcript;
+    recognition.abort();                                        // mic off before we speak
+    const { answer } = await fetch("/api/ask", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }).then((r) => r.json());
+    const wav = await fetch("/api/speech", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: answer }) }).then((r) => r.arrayBuffer());
+    const source = audioContext.createBufferSource();
+    source.buffer = await audioContext.decodeAudioData(wav);
+    source.connect(audioContext.destination);
+    source.onended = () => setTimeout(askByVoice, 900);         // echo guard, then listen again
+    source.start();
+  };
+  recognition.start();
+}</code></pre>
+            </div>
+            <p>
+              The server side is <code>lib/conversation.js</code>: <code>createSpeech()</code>
+              is reusable as it is, and <code>createFollowUp()</code> shows how to give a
+              question context. Add a speech-start timeout so the microphone never stays
+              open indefinitely, and tell users that recognition may use Google's service.
+            </p>
+          </section>
+
+          <section id="reuse-documents">
+            <p class="step">26 / BUILD YOUR OWN</p>
+            <h2>Reuse document intelligence.</h2>
+            <p><strong>Pattern:</strong> PDF/DOCX → extraction → Gemini → structured analysis. No scanner required.</p>
+            <div class="command" data-simplified>
+              <span class="file">analyze.mjs</span>
+              <pre><code>import { readFile } from "node:fs/promises";
+import { validateFile, createDocumentAnalyzer } from "./lib/document.js";
+const buffer = await readFile(process.argv[2]);
+const check = validateFile({ buffer, mimeType: "application/pdf", name: process.argv[2] });
+if (check.error) throw new Error(check.error);
+const analyze = createDocumentAnalyzer();
+const result = await analyze({ kind: check.kind, buffer, mimeType: "application/pdf", name: process.argv[2] });
+console.log(result.documentType, result.language.primary, result.summary);
+console.log(result.fields);                       // grounded key details
+console.log(result.pages[0].english || result.pages[0].original);</code></pre>
+            </div>
+            <p>
+              <code>lib/document.js</code> has no dependency on the browser or the
+              scanner. <code>extractPdf()</code>, <code>extractDocx()</code> and
+              <code>sniff()</code> are also useful on their own, for example in a script
+              that indexes a folder of files.
+            </p>
+          </section>
+
+          <section id="experiments">
+            <p class="step">27 / BUILD YOUR OWN</p>
+            <h2>Ideas to experiment with.</h2>
+            <ul>
+              <li><strong>Particle mini-lesson.</strong> Create an AnalyserNode from any <code>&lt;audio&gt;</code> element (<code>audioContext.createMediaElementSource()</code>) and pass it to <code>createParticlePresence(host).connect(analyser, "charon")</code>. No Gemini needed.</li>
+              <li><strong>Add a document type.</strong> Extend <code>typeNames</code> in <code>lib/document.js</code> with, say, "menu" fields, and add a fixture to <code>test/document-real.js</code>.</li>
+              <li><strong>Change the voice language.</strong> Cloud Text-to-Speech has many voices; change <code>VOICE</code> and <code>languageCode</code> in <code>lib/conversation.js</code> and <code>recognition.lang</code> in <code>voice.js</code>.</li>
+              <li><strong>Make the countdown adaptive.</strong> Shorten it when the object has been steady for longer.</li>
+              <li><strong>Log token use.</strong> <code>/api/document</code> already returns <code>usage</code>; show it in the details disclosure to make costs visible.</li>
+              <li><strong>Write a test first.</strong> Copy a case from <code>test/voice-browser.js</code> and make it fail before you change <code>voice.js</code>.</li>
+            </ul>
+            <div class="callout why">
+              <strong>Why experiment?</strong>
+              <p>Reading code teaches what it does. Changing it teaches why it is the way it is. The tests will tell you when you have broken something.</p>
+            </div>
+          </section>
+
+          <!-- ================= REFERENCE ================= -->
+          <section id="environment">
+            <p class="step">28 / REFERENCE</p>
+            <h2>Environment variables.</h2>
+            <table>
+              <tr><th>Variable</th><th>Meaning</th></tr>
+              <tr><td><code>GOOGLE_CLOUD_PROJECT</code></td><td>Your Google Cloud Project ID. Required. Read by the SDKs and sent as the quota project.</td></tr>
+              <tr><td><code>PORT</code></td><td>Local port, default 3000. The server always binds to 127.0.0.1.</td></tr>
+              <tr><td><code>GOOGLE_APPLICATION_CREDENTIALS</code></td><td>Optional absolute path to a service-account JSON. Not needed with ADC sign-in; if set, it overrides ADC.</td></tr>
+            </table>
+            <p>
+              <code>npm start</code> runs <code>node --use-system-ca --env-file=.env server.js</code>:
+              the system certificate store is enabled for managed networks and the
+              <code>.env</code> file is loaded without any extra dependency.
+            </p>
+            <h3>Costs, honestly</h3>
+            <p>
+              Each identification, document analysis, follow-up and speech request is
+              billed to your project. Measured during release testing: one photographed
+              page used about 1,900 input and 450–700 output tokens; a 12-page text PDF
+              about 2,750 input and 650 output. Check
+              <a href="https://cloud.google.com/vertex-ai/generative-ai/pricing" target="_blank" rel="noopener noreferrer">Gemini pricing</a>
+              and <a href="https://cloud.google.com/text-to-speech/pricing" target="_blank" rel="noopener noreferrer">Text-to-Speech pricing</a>.
+              The local server allows one active request and a small number per minute so a
+              stuck loop cannot run up a bill.
+            </p>
+            <h3>Production versus this educational edition</h3>
+            <p>
+              This open-source learning edition is complete and runs on your own machine.
+              The hosted UCENTH service may apply its own usage limits and abuse controls
+              to protect shared cloud resources; those operational controls are not part of
+              this source, and this guide does not teach how to bypass them. The small local
+              limits you see in <code>server.js</code> exist to protect your own billing.
+            </p>
+          </section>
+
+          <section id="troubleshooting">
+            <p class="step">29 / REFERENCE</p>
+            <h2>Troubleshooting.</h2>
+            <details>
+              <summary>gcloud.ps1 or npm.ps1 cannot be loaded</summary>
+              <p>Use <code>gcloud.cmd</code> or <code>npm.cmd</code> in PowerShell. Reopen the terminal after installing the CLI. Do not weaken the execution policy.</p>
+            </details>
+            <details>
+              <summary>“Identification is not ready”</summary>
+              <p>Check the ADC sign-in, <code>GOOGLE_CLOUD_PROJECT</code>, that both APIs are enabled, and billing. Restart Node after editing <code>.env</code>. If <code>GOOGLE_APPLICATION_CREDENTIALS</code> is set, it overrides ADC.</p>
+            </details>
+            <details>
+              <summary>“Identification could not complete” or a timeout</summary>
+              <p>Check your connection and Google service status, then retry once. The app returns its own safe message rather than raw provider errors. Never paste credential files or tokens into an issue.</p>
+            </details>
+            <details>
+              <summary>Quota exhausted or scan limit reached</summary>
+              <p>The local server allows one active request and six identifications per minute. A Google quota or billing error needs the project's quota and billing settings.</p>
+            </details>
+            <details>
+              <summary>Camera blocked, missing or busy</summary>
+              <p>Allow Camera for localhost in Chrome site settings and in the operating system. Close other apps using the webcam, then choose Scan another object.</p>
+            </details>
+            <details>
+              <summary>Voice unavailable or the microphone was denied</summary>
+              <p>Allow the microphone for localhost. If Charon fails, the written answer still appears and typing keeps working. Check that <code>texttospeech.googleapis.com</code> is enabled.</p>
+            </details>
+            <details>
+              <summary>This PDF or Word file is not supported</summary>
+              <p>Limits: PDF 15 MB and 60 pages (25 scanned), Word 10 MB, about 200,000 characters of text. Encrypted PDFs and legacy .doc files are not read. The message names the reason.</p>
+            </details>
+            <details>
+              <summary>Certificate verification fails on a managed network</summary>
+              <p>Ask your administrator for the trusted CA bundle and follow <a href="https://cloud.google.com/sdk/docs/proxy-settings" target="_blank" rel="noopener noreferrer">Google's proxy and certificate guide</a>. Node already uses the system certificate store; do not disable TLS verification.</p>
+            </details>
+            <details>
+              <summary>.env missing, port busy or install fails</summary>
+              <p>Create <code>.env</code> from the template. If port 3000 is busy, set another PORT and use the address Node prints. For install failures check the Node version, network access and <a href="https://sharp.pixelplumbing.com/install/" target="_blank" rel="noopener noreferrer">Sharp installation help</a>.</p>
+            </details>
+          </section>
+
+          <section id="architecture">
+            <p class="step">30 / REFERENCE</p>
+            <h2>Architecture.</h2>
+            <p>
+              Three browser modules and one server, connected by DOM events and four HTTP
+              routes. <code>ARCHITECTURE.md</code> in the source folder documents the
+              details: request shapes, limits, the state machine and the test strategy.
+            </p>
+            <table>
+              <tr><th>Route</th><th>Input</th><th>Output</th></tr>
+              <tr><td><code>POST /api/identify</code></td><td>JSON with a JPEG/PNG data URL (≤ 2 MB)</td><td>Structured identification (object, person or document routing)</td></tr>
+              <tr><td><code>POST /api/document</code></td><td>Raw PDF, DOCX, JPEG or PNG body</td><td>Type, language, summary, fields, pages with original and English text</td></tr>
+              <tr><td><code>POST /api/follow-up</code></td><td>Question, identification, image and/or document context, recent history</td><td>Answer text plus a user-supplied name if stated</td></tr>
+              <tr><td><code>POST /api/speech</code></td><td>Answer text (≤ 1,800 characters)</td><td>WAV audio in the Charon voice</td></tr>
+            </table>
+            <h3>Privacy summary</h3>
+            <p>
+              One captured frame, uploaded files and their extracted text, recognized
+              questions and answer text go to Google's services; live video never does,
+              and raw microphone audio is never recorded by the app (Chrome's recognition
+              may process it). Everything is held in memory for the session and cleared by
+              Scan another object. Think before uploading highly sensitive documents.
+            </p>
+            <h3>Tests</h3>
+            <div class="command"><pre><code>npm test
+npm run test:browser
+npm run release:check</code></pre></div>
+            <p>
+              Unit tests run the real routes with fake model functions and no billing.
+              Chrome tests drive the interface with mocked responses. Two opt-in suites
+              (<code>test:person</code>, <code>test:document</code>) call live Gemini with
+              synthetic fixtures generated at run time.
+            </p>
+            <h3>Open source, by UCENTH</h3>
+            <p>
+              UCENTH Vision Intelligence is an open-source educational project by
+              <strong>UCENTH — Universal Central Host</strong>, released under the
+              <a href="LICENSE">MIT License</a>. Dependencies keep their own licenses; see
+              <a href="THIRD-PARTY-NOTICES.md">third-party notices</a>.
+              <a href="https://github.com/Ucenth/ucenth-vision-intelligence" target="_blank" rel="noopener noreferrer">View source on GitHub</a> ·
+              <a href="https://github.com/Ucenth/ucenth-vision-intelligence/issues" target="_blank" rel="noopener noreferrer">Report an issue</a>
+            </p>
+          </section>
+        </main>
+      </div>
+      <footer class="project-footer">
+        <div>
+          <strong>UCENTH Vision Intelligence</strong>
+          <p>Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH</p>
+        </div>
+        <nav aria-label="Project links">
+          <a href="https://github.com/Ucenth/ucenth-vision-intelligence" target="_blank" rel="noopener noreferrer">Source Code</a
+          ><a href="index.html">Open scanner</a><a href="LICENSE">License</a>
+        </nav>
+      </footer>
+    </div>
+    <p id="copy-status" class="sr-only" role="status"></p>
+  </body>
+</html>

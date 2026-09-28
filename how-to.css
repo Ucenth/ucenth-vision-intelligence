@@ -1,0 +1,592 @@
+/* How To page: a long-form teaching guide.
+ *
+ * Sections: tokens → frame → hero → two-column layout (sticky contents + guide)
+ * → typography → code blocks and copy buttons → callouts → diagrams → responsive.
+ * Colour tokens are shared with appearance.css so the theme toggle works here too.
+ * Code blocks may scroll horizontally on their own; the page itself never does. */
+
+/* =========================================================
+   DESIGN TOKENS AND BASE
+   ========================================================= */
+:root {
+  color-scheme: dark;
+  --bg: #101112;
+  --panel: #181a1d;
+  --text: #f2f3f5;
+  --muted: #a8afb9;
+  --line: #30343a;
+  --blue: #8bb3ff;
+  --why: #7fc9a6;
+  --try: #f2c06b;
+  --mistake: #f28b82;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  scroll-padding-top: 32px;
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    17px/1.75 Arial,
+    Helvetica,
+    sans-serif;
+}
+a {
+  color: var(--blue);
+  text-underline-offset: 4px;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 5px;
+}
+.shell {
+  max-width: 1240px;
+  margin: auto;
+  padding: 0 44px;
+}
+
+/* =========================================================
+   TOP BAR AND HERO
+   ========================================================= */
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 30px 0;
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  color: var(--text);
+  text-decoration: none;
+  font-size: 20px;
+  letter-spacing: 3px;
+  font-weight: 700;
+}
+.brand small {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.top > a:nth-child(2) {
+  font-size: 13px;
+  text-decoration: none;
+  margin-left: auto;
+}
+.hero {
+  padding: 76px 0 62px;
+  border-bottom: 1px solid var(--line);
+}
+.eyebrow {
+  color: var(--blue);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin: 0 0 20px;
+}
+h1 {
+  font-size: clamp(42px, 6vw, 76px);
+  letter-spacing: -3px;
+  line-height: 1.05;
+  font-weight: 400;
+  margin: 0 0 24px;
+}
+h1 span {
+  color: var(--secondary);
+}
+.hero > p:not(.eyebrow):not(.meta) {
+  max-width: 680px;
+  font-size: 20px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* =========================================================
+   LAYOUT: STICKY CONTENTS + GUIDE
+   The contents column stays in view on desktop; a search box
+   filters sections and links; the current section is highlighted
+   by how-to.js using IntersectionObserver.
+   ========================================================= */
+.layout {
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr);
+  gap: 66px;
+  padding: 48px 0 70px;
+}
+.contents {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  scrollbar-width: thin;
+  font-size: 13px;
+  padding-right: 6px;
+}
+.contents h2 {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  font-weight: 400;
+  margin: 22px 0 10px;
+}
+.contents h2:first-of-type {
+  margin-top: 0;
+}
+.contents a {
+  display: flex;
+  gap: 12px;
+  padding: 6px 0;
+  color: var(--secondary);
+  text-decoration: none;
+  line-height: 1.5;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  margin-left: -12px;
+}
+.contents a:hover {
+  color: var(--blue);
+}
+.contents a.active {
+  color: var(--text);
+  border-left-color: var(--blue);
+}
+.contents span {
+  color: var(--muted);
+  font-size: 11px;
+  min-width: 18px;
+}
+.search {
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.search-status {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+.guide {
+  min-width: 0;
+}
+.guide section {
+  padding: 0 0 48px;
+  margin: 0 0 45px;
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: 24px;
+}
+.guide section[hidden] {
+  display: none;
+}
+
+/* =========================================================
+   TYPOGRAPHY
+   ========================================================= */
+.step {
+  font-size: 12px;
+  color: var(--blue);
+  letter-spacing: 2px;
+  margin: 0 0 10px;
+}
+h2 {
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.7px;
+  margin: 0 0 22px;
+}
+h3 {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 28px 0 10px;
+}
+h4 {
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+  margin: 22px 0 6px;
+}
+p {
+  margin: 0 0 18px;
+}
+li {
+  padding-left: 4px;
+  margin: 7px 0;
+}
+ul,
+ol {
+  padding-left: 24px;
+  color: var(--secondary);
+}
+.guide p,
+.guide li {
+  color: var(--secondary);
+}
+.guide strong {
+  color: var(--text);
+}
+/* Inline code in prose may wrap anywhere: a long identifier must never widen the page. */
+code {
+  font-size: 0.87em;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.note {
+  border-left: 2px solid var(--blue);
+  padding: 8px 0 8px 20px;
+  margin: 24px 0;
+}
+details {
+  border-top: 1px solid var(--line);
+  padding: 15px 0;
+  margin: 20px 0 0;
+  font-size: 15px;
+}
+summary {
+  cursor: pointer;
+  color: var(--text);
+}
+details p {
+  margin: 15px 0 0;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0 0 22px;
+  font-size: 15px;
+}
+th,
+td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px 8px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--secondary);
+}
+th {
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* =========================================================
+   CODE BLOCKS AND COPY BUTTONS
+   Every .command gets a Copy button from how-to.js. Long lines
+   scroll inside the block (overflow: auto) so the page never
+   overflows horizontally on phones.
+   ========================================================= */
+.command {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  margin: 16px 0 22px;
+  padding: 48px 20px 20px;
+  overflow: auto;
+}
+.command pre {
+  margin: 0;
+  white-space: pre;
+}
+.command.wrap pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.command code {
+  font:
+    14px/1.8 Consolas,
+    ui-monospace,
+    monospace;
+  color: var(--secondary);
+}
+.command-label {
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin: 25px 0 4px;
+}
+.copy {
+  position: absolute;
+  right: 12px;
+  top: 9px;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  cursor: pointer;
+  font: 12px/1.8 Arial;
+  padding: 4px 8px;
+}
+.file {
+  position: absolute;
+  left: 20px;
+  top: 12px;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+/* Real excerpts are tagged data-source-example and verified against the code by
+   scripts/how-to-sync.js; simplified examples are tagged data-simplified. The label
+   suffix tells the reader which kind they are looking at. */
+.command[data-source-example] .file::after {
+  content: " · from UCENTH Vision Intelligence source";
+  color: var(--why);
+}
+.command[data-simplified] .file::after {
+  content: " · simplified example";
+  color: var(--try);
+}
+
+/* =========================================================
+   CALLOUTS: WHY? · TRY THIS · COMMON MISTAKE
+   One shared shape, an accent colour and a text label, so
+   the type is never indicated by colour alone.
+   ========================================================= */
+.callout {
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  padding: 14px 18px;
+  margin: 22px 0;
+  font-size: 15px;
+}
+.callout > strong:first-child {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.callout p:last-child {
+  margin-bottom: 0;
+}
+.why {
+  border-left-color: var(--why);
+}
+.why > strong:first-child {
+  color: var(--why);
+}
+.try {
+  border-left-color: var(--try);
+}
+.try > strong:first-child {
+  color: var(--try);
+}
+.mistake {
+  border-left-color: var(--mistake);
+}
+.mistake > strong:first-child {
+  color: var(--mistake);
+}
+
+/* =========================================================
+   DIAGRAMS
+   Flow lists and small SVGs drawn with currentColor so they
+   follow the theme. No images are loaded.
+   ========================================================= */
+.flow {
+  list-style: none;
+  padding: 0;
+  counter-reset: flow;
+  margin: 0 0 22px;
+}
+.flow li {
+  counter-increment: flow;
+  border-top: 1px solid var(--line);
+  padding: 12px 0;
+  display: flex;
+  gap: 20px;
+}
+.flow li::before {
+  content: counter(flow, decimal-leading-zero);
+  color: var(--blue);
+  font:
+    12px/2.4 Consolas,
+    monospace;
+}
+.diagram {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 720px;
+  margin: 10px 0 24px;
+  color: var(--secondary);
+  font-family: Consolas, ui-monospace, monospace;
+}
+.diagram rect {
+  fill: var(--panel);
+  stroke: var(--line);
+}
+.diagram .accent {
+  stroke: var(--blue);
+}
+.diagram text {
+  fill: var(--text);
+  font-size: 12px;
+}
+.diagram .small {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.diagram path,
+.diagram line {
+  stroke: var(--muted);
+  fill: none;
+}
+.diagram .bad rect {
+  stroke: var(--mistake);
+}
+.tree {
+  font:
+    14px/1.8 Consolas,
+    ui-monospace,
+    monospace;
+  color: var(--secondary);
+  white-space: pre;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 20px;
+  margin: 0 0 22px;
+}
+.tree b {
+  color: var(--text);
+  font-weight: 400;
+}
+.tree i {
+  color: var(--muted);
+  font-style: normal;
+}
+
+/* =========================================================
+   FOOTER AND UTILITIES
+   ========================================================= */
+.project-footer {
+  border-top: 1px solid var(--line);
+  padding: 30px 0 45px;
+  display: flex;
+  justify-content: space-between;
+  gap: 25px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.project-footer strong {
+  font-size: 15px;
+  color: var(--text);
+  font-weight: 400;
+}
+.project-footer p {
+  margin: 5px 0;
+}
+.project-footer nav {
+  display: flex;
+  gap: 20px;
+  align-items: start;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* =========================================================
+   RESPONSIVE
+   Tablet keeps two columns with a narrower contents list; below
+   800px the contents become a two-column grid above the guide.
+   ========================================================= */
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 40px;
+  }
+}
+@media (max-width: 800px) {
+  .shell {
+    padding: 0 22px;
+  }
+  .hero {
+    padding: 44px 0 32px;
+  }
+  .hero > p:not(.eyebrow):not(.meta) {
+    font-size: 18px;
+  }
+  h1 {
+    letter-spacing: -1.8px;
+  }
+  /* minmax(0, 1fr), not 1fr: a grid track's automatic minimum is its content width,
+     so a wide <pre> would stretch the page instead of scrolling inside its box. */
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding-top: 28px;
+  }
+  .contents {
+    position: static;
+    max-height: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 14px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 26px;
+  }
+  .contents h2,
+  .search,
+  .search-status {
+    grid-column: 1 / -1;
+  }
+  .contents a {
+    font-size: 12px;
+    margin-left: 0;
+    padding-left: 8px;
+  }
+  .guide section {
+    padding-bottom: 30px;
+    margin-bottom: 32px;
+  }
+  h2 {
+    font-size: 26px;
+  }
+  .project-footer {
+    flex-direction: column;
+  }
+  .top {
+    padding: 22px 0;
+    flex-wrap: wrap;
+  }
+  .brand {
+    font-size: 17px;
+  }
+  .command {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .command code {
+    font-size: 13px;
+  }
+  .file {
+    left: 14px;
+  }
+}

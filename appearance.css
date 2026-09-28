@@ -1,0 +1,113 @@
+/* Appearance: theme tokens and the icon controls.
+ *
+ * Theme switching is one attribute: appearance.js sets <html data-theme="light">.
+ * The :root block declares the dark tokens; :root[data-theme="light"] overrides the
+ * same names. Every other stylesheet reads var(--token), so no component has to know
+ * which theme is active. color-scheme also tells the browser which form-control and
+ * scrollbar palette to use. */
+:root {
+  color-scheme: dark;
+  --bg: #101112;
+  --panel: #17191b;
+  --stage: #181a1d;
+  --text: #f1f1ef;
+  --secondary: #b7bdc6;
+  --muted: #9ba2ac;
+  --line: #30343a;
+  --frame: #697584;
+  --blue: #8bb3ff;
+  --button: #6195f4;
+  --button-text: #0b1830;
+  --button-hover: #8bb4ff;
+  --error: #f4c39c;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --panel: #eceff3;
+  --stage: #e6eaf0;
+  --text: #172230;
+  --secondary: #435269;
+  --muted: #526177;
+  --line: #c9d1dc;
+  --frame: #77869b;
+  --blue: #215cc4;
+  --button: #245fc7;
+  --button-text: #ffffff;
+  --button-hover: #194ba5;
+  --error: #99491b;
+}
+/* =========================================================
+   ICON CONTROLS
+   aria-pressed carries the state; the SVG paths swap by that attribute
+   so the muted icon needs no extra markup or JavaScript.
+   ========================================================= */
+.appearance-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--secondary);
+  cursor: pointer;
+}
+.icon-button:hover {
+  background: var(--panel);
+  border-color: var(--line);
+}
+.icon-button:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.icon-button svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-button[aria-pressed="true"] {
+  color: var(--blue);
+}
+.sound-muted,
+[aria-pressed="false"] .sound-waves {
+  display: none;
+}
+[aria-pressed="false"] .sound-muted {
+  display: initial;
+}
+.masthead .tool-name {
+  margin-left: auto;
+  margin-right: 26px;
+}
+.top > a:nth-child(2) {
+  margin-left: auto;
+  margin-right: 20px;
+  font-size: 13px;
+  text-decoration: none;
+}
+.empty-state {
+  max-width: 100%;
+  padding: 0 14px;
+}
+@media (max-width: 800px) {
+  .masthead .tool-name {
+    display: none;
+  }
+  .top {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .top > a:nth-child(2) {
+    margin-right: 0;
+  }
+}
