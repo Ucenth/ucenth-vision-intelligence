@@ -514,6 +514,16 @@ async function listenServer(c, turn, attempt, caps) {
     return;
   }
   attachStream(c, stream);
+  // iOS Safari can leave the AudioContext "interrupted" or "suspended" after a long
+  // idle period or a system interruption; the analyser then reads silence and no
+  // speech would ever be detected. Resume it here, inside the gesture chain, and log
+  // the state so a diagnostics report shows what the noise gate was listening to.
+  if (audioContext.state !== "running") {
+    try {
+      await audioContext.resume();
+    } catch {}
+  }
+  diag("audio-context", { state: audioContext.state });
   const mime = caps.recorderMime;
   const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
   c.recorder = recorder;
@@ -557,7 +567,8 @@ async function listenServer(c, turn, attempt, caps) {
     data = new Float32Array(analyser.fftSize);
   let noise = 0.002,
     started = performance.now(),
-    lastLoud = 0;
+    lastLoud = 0,
+    peak = 0;
   const poll = () => {
     if (!live() || stopped) return;
     analyser.getFloatTimeDomainData(data);
@@ -565,6 +576,7 @@ async function listenServer(c, turn, attempt, caps) {
     for (const v of data) sum += v * v;
     const rms = Math.sqrt(sum / data.length),
       now = performance.now();
+    if (rms > peak) peak = rms;
     if (now - started < 400) noise = Math.min(0.01, noise * 0.9 + rms * 0.1);
     else if (rms > Math.max(0.012, noise * 3)) {
       lastLoud = now;
@@ -582,7 +594,9 @@ async function listenServer(c, turn, attempt, caps) {
     if (stopped) return;
     stopped = true;
     cancelAnimationFrame(c.pollFrame);
-    diag("recorder.stop", { why });
+    // Peak level and gate settings tell a report whether silence was real or the
+    // analyser was reading nothing (peak 0 with a running context means no signal).
+    diag("recorder.stop", { why, peak: +peak.toFixed(4), noise: +noise.toFixed(4), contextState: audioContext.state });
     try {
       recorder.stop();
     } catch {
