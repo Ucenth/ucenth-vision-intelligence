@@ -61,10 +61,26 @@ const json = (res, status, data) => {
  * exercise the real routes with fakes and no billing. The route order is: static files,
  * health, conversation routes, document route, then the identification route below.
  */
-export function createServer({ identify, followUp, synthesize, analyzeDocument } = {}) {
+export function createServer({
+  identify,
+  followUp,
+  synthesize,
+  analyzeDocument,
+  // Hosts this server answers to. The educational server is a personal local tool,
+  // so only localhost is accepted; a hosted deployment passes its own pattern.
+  allowedHosts = /^(localhost|127\.0\.0\.1)(:\d+)?$/,
+  // Document limits are injectable so a public deployment can choose smaller ones.
+  documentLimits,
+  // Optional hook that runs before routing. It may answer the request itself and
+  // return true, or return false to let the normal routes continue.
+  before,
+} = {}) {
   const identifyOriginal = identify || createGeminiDetector();
   const voiceRoutes = createVoiceRoutes({ followUp, synthesize });
-  const documentRoute = createDocumentRoute(analyzeDocument ? { analyze: analyzeDocument } : {});
+  const documentRoute = createDocumentRoute({
+    ...(analyzeDocument ? { analyze: analyzeDocument } : {}),
+    ...(documentLimits ? { limits: documentLimits } : {}),
+  });
   let busy = false;
   let requests = [];
   return http.createServer(async (req, res) => {
@@ -78,10 +94,14 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     );
     const host = req.headers.host;
-    if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || ""))
-      return json(res, 403, { error: "Only local access is allowed." });
+    if (!allowedHosts.test(host || ""))
+      return json(res, 403, { error: "This host is not served here." });
     // how-to:end local-boundary
-    const pathname = new URL(req.url, `http://${host}`).pathname;
+    // Behind a TLS-terminating proxy the browser's origin is https://host; locally it is http.
+    const scheme = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const origin = `${scheme}://${host}`;
+    const pathname = new URL(req.url, origin).pathname;
+    if (before && (await before(req, res, { pathname, origin }))) return;
     if (req.method === "GET" && types[pathname]) {
       try {
         res.setHeader("Content-Type", types[pathname] + "; charset=utf-8");
@@ -101,14 +121,14 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
     if (req.method === "GET" && pathname === "/api/health")
       return json(res, 200, { ok: true, provider: "Gemini 3.8 Flash vision" });
     if (req.method === "POST" && ["/api/follow-up", "/api/speech"].includes(pathname))
-      return voiceRoutes(req, res, pathname, host);
+      return voiceRoutes(req, res, pathname, origin);
     if (req.method === "POST" && pathname === "/api/document")
-      return documentRoute(req, res, host);
+      return documentRoute(req, res, origin);
     if (req.method !== "POST" || pathname !== "/api/identify")
       return json(res, 404, { error: "Not found." });
         // Same-origin only. Together with Sec-Fetch-Site this stops another website in the
         // same browser from spending this machine's Gemini quota.
-    if (req.headers.origin && req.headers.origin !== `http://${host}`)
+    if (req.headers.origin && req.headers.origin !== origin)
       return json(res, 403, {
         error: "This request must come from the local scanner.",
       });

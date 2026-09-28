@@ -1,0 +1,74 @@
+/* Hosted-site additions. Uses the shared theme tokens so dark and light modes match. */
+.hosted-quota {
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin: 10px 0 0;
+}
+.hosted-quota:empty {
+  display: none;
+}
+.hosted-source {
+  margin: 0 5.2% 40px;
+  padding: 34px 0 0;
+  border-top: 1px solid var(--line);
+}
+.hosted-source h2 {
+  font-size: clamp(26px, 2.6vw, 34px);
+  font-weight: 400;
+  letter-spacing: -0.8px;
+  line-height: 1.15;
+  margin: 0 0 14px;
+}
+.hosted-source p {
+  max-width: 64ch;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--secondary);
+  margin: 0 0 18px;
+}
+.hosted-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 22px;
+}
+.hosted-button {
+  display: inline-block;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+  font: inherit;
+  font-size: 14px;
+  background: transparent;
+  cursor: pointer;
+}
+.hosted-button:hover {
+  border-color: var(--blue);
+}
+.hosted-button.primary {
+  background: var(--button);
+  color: var(--button-text);
+  border-color: var(--button);
+}
+.hosted-share-copy {
+  margin-top: 10px;
+}
+.hosted-share-status {
+  font-size: 13px;
+  color: var(--muted);
+}
+.hosted-share-status:empty {
+  display: none;
+}
+@media (max-width: 800px) {
+  .hosted-source {
+    margin: 0 24px 32px;
+  }
+  .hosted-button {
+    flex: 1 1 45%;
+    text-align: center;
+  }
+}

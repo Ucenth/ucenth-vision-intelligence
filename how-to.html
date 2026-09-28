@@ -1203,11 +1203,13 @@ raw = [
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 );
 const host = req.headers.host;
-if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || ""))
-  return json(res, 403, { error: "Only local access is allowed." });</code></pre>
+if (!allowedHosts.test(host || ""))
+  return json(res, 403, { error: "This host is not served here." });</code></pre>
             </div>
             <p>
-              <strong>CORS, briefly:</strong> browsers block cross-origin requests by
+              <code>allowedHosts</code> defaults to localhost; a hosted deployment passes its own
+              pattern, and the scheme (http locally, https behind a proxy) comes from the
+              request, so the same code serves both. <strong>CORS, briefly:</strong> browsers block cross-origin requests by
               default, and this server sends no <code>Access-Control-Allow-Origin</code>
               header, so a page on another origin cannot read its responses. The
               Origin and Sec-Fetch-Site checks add a second layer.
