@@ -2,7 +2,6 @@
 export const files = [
   "index.html",
   "how-to.html",
-  "setup.html",
   "style.css",
   "appearance.css",
   "appearance.js",

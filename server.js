@@ -45,7 +45,6 @@ const types = {
 Object.assign(types, {
   "/how-to.html": "text/html",
   "/how-to.css": "text/css",
-  "/setup.html": "text/html",
   "/appearance.css": "text/css",
   "/appearance.js": "text/javascript",
   "/how-to.js": "text/javascript",

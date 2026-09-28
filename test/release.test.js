@@ -22,7 +22,7 @@ test("setup and license are public but captures and authentication are not", asy
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    for (const path of ["/how-to.html", "/how-to.css", "/how-to.js", "/setup.html", "/LICENSE"])
+    for (const path of ["/how-to.html", "/how-to.css", "/how-to.js", "/LICENSE"])
       assert.equal((await fetch(base + path)).status, 200);
     for (const path of [
       "/.env",
