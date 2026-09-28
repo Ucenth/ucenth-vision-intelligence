@@ -16,8 +16,12 @@
 import { createHash } from "node:crypto";
 
 export const BUCKET_MS = 60 * 60 * 1000;
-export const NEW_VISITORS_PER_HOUR = 30;
-export const ACCEPTED_PER_HOUR = 60;
+// Thresholds are deliberately generous: a carrier's CGNAT or a campus network can put
+// hundreds of real people behind one address, and each of them can only ever spend
+// five credits per five hours. These numbers catch identity rotation and automation,
+// not a popular shared network. Load tests from one machine reach them quickly.
+export const NEW_VISITORS_PER_HOUR = 150;
+export const ACCEPTED_PER_HOUR = 400;
 
 export function sourceAddress(req) {
   // Behind Cloud Run the trusted proxy appends the real client address as the LAST entry
