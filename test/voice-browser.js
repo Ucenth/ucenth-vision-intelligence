@@ -42,16 +42,19 @@ try {
         voiceProbe.recognition = true; voiceProbe.starts++;
         const final = (transcript) => Object.assign([{ transcript }], { isFinal: true });
         // Turn 3 is the Android Chrome pattern from the physical diagnostics: no interim
-        // text, the SAME result index re-emitted as a growing final hypothesis (plus an
-        // exact duplicate), then a second index for the rest of the sentence.
-        if (voiceProbe.starts === 3) this.timer = setTimeout(() => {
-          this.onresult?.({ resultIndex: 0, results: [final("What")] });
+        // text; every event opens a NEW result index whose text is the whole hypothesis
+        // so far (empty placeholders first, exact repeats while still listening).
+        if (voiceProbe.starts === 3) {
+          const list = [];
+          const emit = (text) => { list.push(final(text)); this.onresult?.({ resultIndex: list.length - 1, results: [...list] }); };
           this.timer = setTimeout(() => {
-            this.onresult?.({ resultIndex: 0, results: [final("What can")] });
-            this.onresult?.({ resultIndex: 0, results: [final("What can")] });
-            this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] }), 250);
-          }, 250);
-        }, 180);
+            emit(""); emit(""); emit("Wh"); emit("What ca");
+            this.timer = setTimeout(() => {
+              emit("What can yo"); emit("What can yo");
+              this.timer = setTimeout(() => { emit("What can you see?"); emit("What can you see?"); }, 250);
+            }, 250);
+          }, 180);
+        }
         // Turn 4: a late second segment arrives after the settle timer has already started.
         else if (voiceProbe.starts === 4) this.timer = setTimeout(() => {
           this.onresult?.({ resultIndex: 0, results: [final("What can")] });

@@ -460,9 +460,10 @@ async function listenNative(c, turn, attempt, caps) {
     });
     if (transcript.live()) confirmSpeech();
     c.particles?.pulse(0.5);
-    // A changed final (new segment or revision) restarts the settle timer; a duplicate
-    // or an interim guess does not, so a stream of repeats cannot delay the question.
-    if (outcome === "segment" || outcome === "revision") {
+    // Any final event restarts the settle timer, including an exact repeat: on Android
+    // a repeat is a heartbeat meaning "still listening, nothing new yet", and the
+    // recogniser ends the turn itself when the person stops. Interim guesses do not.
+    if (outcome === "segment" || outcome === "revision" || outcome === "duplicate") {
       clearTimeout(c.finalTimer);
       c.finalTimer = setTimeout(() => submit("settled"), FINAL_SETTLE_MS);
     }
