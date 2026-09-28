@@ -74,6 +74,17 @@ input:focus-visible {
   font-size: 20px;
   letter-spacing: 3px;
   font-weight: 700;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 12px;
+  align-items: center;
+}
+/* The approved mark, contained on its own dark surface, beside the wordmark. */
+.brand-mark {
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
 }
 .brand small {
   display: block;

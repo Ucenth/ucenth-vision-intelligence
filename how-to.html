@@ -17,6 +17,11 @@
       content="How UCENTH Vision Intelligence was built and how to run it: camera capture, Gemini integration, structured prompts, people from context, document intelligence, Charon voice, hands-free conversation, particle visuals and security, with mini-lessons for your own projects."
     />
     <meta name="theme-color" content="#101112" />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/public/assets/brand/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/public/assets/brand/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta property="og:title" content="How To — UCENTH Vision Intelligence" />
     <meta
       property="og:description"
@@ -32,7 +37,7 @@
     <div class="shell">
       <header class="top">
         <a class="brand" href="index.html"
-          >UCENTH<small>UNIVERSAL CENTRAL HOST</small></a
+          ><img class="brand-mark" src="/public/assets/brand/mark-64.png" width="28" height="28" alt="" decoding="async" />UCENTH<small>UNIVERSAL CENTRAL HOST</small></a
         ><a href="index.html">Open scanner ↗</a>
         <div class="appearance-controls" aria-label="Appearance preferences">
           <button
@@ -245,6 +250,7 @@
 │   ├── <b>document-routes.js</b>  <i>/api/document, raw body, in memory.</i>
 │   └── <b>particle-presence.js</b><i> WebGL2 particles driven by an AnalyserNode.</i>
 │
+├── <b>public/assets/</b>       <i>Images the server may serve: the brand mark and icons (brand/), favicon.ico, site.webmanifest.</i>
 ├── <b>test/</b>                <i>Unit tests (node --test) and Chrome tests (Playwright).</i>
 ├── <b>scripts/</b>             <i>Release allowlist, secret scan, ZIP preparation.</i>
 ├── <b>how-to.html</b>          <i>This guide (how-to.css, how-to.js).</i>

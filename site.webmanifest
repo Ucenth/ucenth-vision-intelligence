@@ -1,0 +1,13 @@
+{
+  "name": "UCENTH Vision Intelligence",
+  "short_name": "UCENTH Vision",
+  "description": "Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#101112",
+  "theme_color": "#101112",
+  "icons": [
+    { "src": "/public/assets/brand/mark-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/public/assets/brand/mark-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
