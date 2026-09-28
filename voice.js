@@ -244,7 +244,7 @@ const LABELS = {
   MICROPHONE_PAUSED: "Conversation paused",
   VOICE_OFF: "Voice off",
   VOICE_UNAVAILABLE: "Voice unavailable",
-  FOLLOW_UP_UNAVAILABLE: "FOLLOW UP UNAVAILABLE",
+  FOLLOW_UP_UNAVAILABLE: "Answer unavailable",
   CONVERSATION_ENDED: "Conversation ended",
   OPENING_MICROPHONE: "OPENING MICROPHONE",
   USER_SPEAKING: "USER SPEAKING",
@@ -278,7 +278,9 @@ function state(c, value) {
   c.ui.primary.hidden = !primary;
   if (primary) c.ui.primary.textContent = primary;
   c.ui.primary.setAttribute("aria-pressed", String(["LISTENING", "USER_SPEAKING", "OPENING_MICROPHONE"].includes(value)));
-  c.ui.mute.hidden = !voiceEnabled || value === "VOICE_OFF";
+  // Controls follow the state: "Turn voice off" only while listening or idle (never
+  // beside THINKING or while Charon speaks), End everywhere except after ending.
+  c.ui.mute.hidden = !voiceEnabled || !["LISTENING", "USER_SPEAKING", "OPENING_MICROPHONE", "IDLE"].includes(value);
   c.ui.end.hidden = value === "CONVERSATION_ENDED";
   // Typing is the fallback whenever listening is not active.
   if (["CONVERSATION_PAUSED", "MICROPHONE_PAUSED", "VOICE_OFF", "VOICE_UNAVAILABLE", "FOLLOW_UP_UNAVAILABLE", "CONVERSATION_ENDED"].includes(value)) c.ui.typed.open = true;

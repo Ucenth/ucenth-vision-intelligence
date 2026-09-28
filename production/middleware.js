@@ -64,6 +64,8 @@ export function createHostedLayer({
       // The diagnostics panel is a staging-only script: never injected in production.
       const hosted = name === "index.html" ? `    <link rel="stylesheet" href="/hosted.css" />\n    <script type="module" src="/hosted.js"></script>\n${diagnostics ? `    <script type="module" src="/diag.js"></script>\n` : ""}` : "";
       html = html.replace("</head>", `${meta}${hosted}  </head>`);
+      // Social previews need an absolute image URL; the educational page keeps a relative one.
+      html = html.replace('content="/public/assets/scanner.png"', `content="${publicOrigin}/public/assets/scanner.png"`);
       pages.set(name, html);
     }
     return pages.get(name);

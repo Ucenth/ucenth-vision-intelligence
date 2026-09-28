@@ -1,163 +1,231 @@
-/* Hosted-site additions. Uses the shared theme tokens so dark and light modes match. */
+/* Hosted-site additions. Shared theme tokens only, so dark and light modes match. */
 
 /* =========================================================
-   ALLOWANCE IN THE MASTHEAD
-   A quiet two-line figure beside the appearance controls; on
-   phones it collapses to "3/5 · 02:41:18" with a full aria-label.
+   ALLOWANCE IN THE HEADER
+   A compact figure beside the appearance controls: "3 / 5" with
+   "requests" or "Next available in 02:41:18" underneath. On phones
+   the two lines sit side by side. The full sentence is in aria-label.
    ========================================================= */
 .hosted-usage {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 1px;
+  gap: 2px;
   margin-right: 22px;
-  padding: 4px 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
   color: var(--text);
   text-decoration: none;
-  line-height: 1.2;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 .hosted-usage-count {
   font-size: 14px;
   letter-spacing: 1px;
   font-variant-numeric: tabular-nums;
 }
+.hosted-usage-short {
+  display: none;
+  font-size: 10px;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .hosted-usage-detail {
   font-size: 10px;
-  letter-spacing: 1.4px;
+  letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+.hosted-usage[data-state="exhausted"],
+.hosted-usage[data-state="paused"] {
+  border-color: var(--blue);
 }
 .hosted-usage[data-state="exhausted"] .hosted-usage-count,
 .hosted-usage[data-state="paused"] .hosted-usage-count {
   color: var(--blue);
 }
-.hosted-usage:focus-visible {
-  outline: 2px solid var(--blue);
-  outline-offset: 4px;
-}
-
-/* =========================================================
-   OPEN SOURCE / EDUCATION SECTION
-   Editorial two-column layout: intro on the left, two cards on
-   the right; a thin footer row for GitHub, license and share.
-   ========================================================= */
-.hosted-source {
-  margin: 0 5.2% 44px;
-  padding: 44px 0 0;
-  border-top: 1px solid var(--line);
-  display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
-  gap: 32px 56px;
-}
-.hosted-source .eyebrow {
-  margin: 0 0 14px;
-}
-.hosted-source h2 {
-  font-size: clamp(30px, 3vw, 40px);
-  font-weight: 400;
-  letter-spacing: -1px;
-  line-height: 1.1;
-  margin: 0 0 16px;
-}
-.hosted-source-intro p:not(.eyebrow) {
-  max-width: 44ch;
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--secondary);
-  margin: 0;
-}
-.hosted-source-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
-}
-.hosted-card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 22px 22px 20px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  text-decoration: none;
-  min-width: 0;
-  transition: border-color 0.15s ease, transform 0.12s ease;
-}
-.hosted-card:hover {
+.hosted-usage:hover {
   border-color: var(--blue);
 }
-a.hosted-card:active {
-  transform: translateY(1px);
-}
-.hosted-card:focus-visible {
+.hosted-usage:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 3px;
 }
-.hosted-card-label {
-  font-size: 10px;
-  letter-spacing: 2px;
-  color: var(--blue);
+
+/* =========================================================
+   OPEN SOURCE / EDUCATION
+   Editorial: a wide headline block, then the Source Edition
+   (left) beside the How To (right), then a thin line of secondary
+   actions. Type and rules carry the hierarchy; no fills, no gradients.
+   ========================================================= */
+.hosted-source {
+  margin: 0 5.2% 44px;
+  padding: 52px 0 0;
+  border-top: 1px solid var(--line);
 }
-.hosted-card-title {
-  font-size: 19px;
-  line-height: 1.25;
-  letter-spacing: -0.3px;
+.hosted-source-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 18px 56px;
+  align-items: end;
+  margin-bottom: 40px;
 }
-.hosted-card p {
-  font-size: 14px;
-  line-height: 1.6;
+.hosted-source-head .eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.hosted-source h2 {
+  font-size: clamp(34px, 3.6vw, 52px);
+  font-weight: 400;
+  letter-spacing: -1.4px;
+  line-height: 1.04;
+  margin: 0;
+}
+.hosted-source-lede {
+  max-width: 52ch;
+  font-size: 16px;
+  line-height: 1.65;
   color: var(--secondary);
   margin: 0;
 }
-.hosted-card-meta {
+.hosted-source-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 14px;
-  margin: 6px 0 4px;
-  padding: 12px 0 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0 56px;
   border-top: 1px solid var(--line);
 }
-.hosted-card-meta div {
+.hosted-edition,
+.hosted-howto {
+  padding: 30px 0 34px;
+  min-width: 0;
+}
+.hosted-edition {
+  border-right: 1px solid var(--line);
+  padding-right: 56px;
+}
+.hosted-edition-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--blue);
+  margin: 0 0 14px;
+}
+.hosted-edition h3,
+.hosted-howto h3 {
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  line-height: 1.2;
+  margin: 0 0 20px;
+}
+.hosted-edition-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 9px 22px;
+  margin: 0 0 26px;
+}
+.hosted-edition-meta div {
   display: contents;
 }
-.hosted-card-meta dt {
+.hosted-edition-meta dt {
   font-size: 10px;
   letter-spacing: 1.4px;
   text-transform: uppercase;
   color: var(--muted);
+  align-self: baseline;
 }
-.hosted-card-meta dd {
+.hosted-edition-meta dd {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
-.hosted-card-action,
-.hosted-link {
-  margin-top: auto;
+/* The one primary action in the section: solid, compact, quiet. */
+.hosted-download {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  font-size: 14px;
-  color: var(--blue);
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 22px;
+  background: var(--text);
+  color: var(--bg, #101112);
   text-decoration: none;
+  font-size: 14px;
+  letter-spacing: 0.2px;
+  transition: opacity 0.15s ease, transform 0.12s ease;
 }
-.hosted-card-action svg {
+.hosted-download svg {
   width: 16px;
   height: 16px;
   transition: transform 0.15s ease;
 }
-.hosted-download:hover .hosted-card-action svg {
+.hosted-download:hover {
+  opacity: 0.88;
+}
+.hosted-download:hover svg {
   transform: translateY(2px);
 }
-.hosted-link:hover span {
-  transform: translateX(3px);
+.hosted-download:active {
+  transform: translateY(1px);
+}
+.hosted-download:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+.hosted-edition-note {
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+  margin: 18px 0 0;
+}
+.hosted-howto-list {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+.hosted-howto-list li {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--secondary);
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.hosted-howto-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.hosted-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 15px;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--text);
+  line-height: 1;
+  padding: 0;
+  min-height: 0;
+  padding-bottom: 6px;
 }
 .hosted-link span {
   display: inline-block;
   transition: transform 0.15s ease;
+}
+.hosted-link:hover {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+.hosted-link:hover span {
+  transform: translateX(3px);
+}
+.hosted-link:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
 }
 .hosted-card-status,
 .hosted-share-status {
@@ -168,52 +236,55 @@ a.hosted-card:active {
 .hosted-share-status:empty {
   display: none;
 }
+.hosted-card-status {
+  display: block;
+  margin-top: 10px;
+}
 .hosted-source-footer {
-  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 28px;
-  padding: 18px 0 0;
+  gap: 8px 28px;
+  padding: 16px 0 0;
   border-top: 1px solid var(--line);
   font-size: 13px;
 }
-.hosted-source-footer a {
+.hosted-source-footer a,
+.hosted-share button {
   color: var(--secondary);
   text-decoration: none;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s ease;
 }
-.hosted-source-footer a:hover {
+.hosted-source-footer a:hover,
+.hosted-share button:hover {
   color: var(--blue);
+}
+.hosted-share button:focus-visible,
+.hosted-source-footer a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
 .hosted-share {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
   gap: 14px;
-  color: var(--muted);
-}
-.hosted-share button {
-  min-height: 44px;
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-.hosted-share button:hover {
-  border-color: var(--blue);
 }
 @media (prefers-reduced-motion: reduce) {
-  .hosted-card,
-  .hosted-card-action svg,
+  .hosted-download,
+  .hosted-download svg,
   .hosted-link span,
-  .hosted-share button {
+  .hosted-share button,
+  .hosted-source-footer a {
     transition: none;
   }
 }
@@ -222,38 +293,68 @@ a.hosted-card:active {
    RESPONSIVE
    ========================================================= */
 @media (max-width: 1100px) {
-  .hosted-source {
+  .hosted-source-head {
     grid-template-columns: minmax(0, 1fr);
-    gap: 26px;
+    align-items: start;
+  }
+  .hosted-source-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hosted-edition {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding-right: 0;
   }
 }
 @media (max-width: 800px) {
   .hosted-usage {
-    margin-right: 12px;
+    margin-right: 10px;
+    padding: 5px 9px;
     flex-direction: row;
-    gap: 6px;
+    gap: 7px;
     align-items: baseline;
   }
   .hosted-usage-count {
     font-size: 13px;
   }
+  /* Phones show the count and a short clock; the sentence stays in the aria-label. */
   .hosted-usage-detail {
-    font-size: 10px;
-    letter-spacing: 0.8px;
-    text-transform: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .hosted-usage-short {
+    display: inline;
+  }
+  .hosted-usage-unit {
+    display: none;
+  }
+  /* The version label yields to the allowance on the narrowest headers. */
+  .masthead .tool-name {
+    display: none;
   }
   .hosted-source {
     margin: 0 24px 32px;
-    padding-top: 30px;
+    padding-top: 34px;
   }
-  .hosted-source-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .hosted-source-head {
+    margin-bottom: 26px;
   }
-  .hosted-card {
-    padding: 18px;
+  .hosted-source h2 {
+    font-size: clamp(30px, 9vw, 36px);
+  }
+  .hosted-edition,
+  .hosted-howto {
+    padding: 24px 0 26px;
+  }
+  .hosted-download {
+    width: 100%;
+    justify-content: center;
   }
   .hosted-share {
     margin-left: 0;
-    flex-wrap: wrap;
   }
 }

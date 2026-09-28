@@ -167,7 +167,7 @@ try {
   assert.match(await page.locator(".voice-answer").textContent(), /blue rectangular/);
   assert.ok(await page.evaluate(() => voiceProbe.tracks.every(t => t.readyState === "ended")));
   followUpFails = true; await type("What is its size?");
-  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "FOLLOW UP UNAVAILABLE");
+  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "Answer unavailable");
   assert.equal(await page.locator(".voice-form input").inputValue(), "What is its size?");
   // A hung synthesis also releases the successful text within the 25-second budget.
   followUpFails = false;

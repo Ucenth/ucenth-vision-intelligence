@@ -1,21 +1,25 @@
 /* Hosted-site additions, injected only by the production server:
- *   - a compact allowance component in the masthead with a live countdown to the
- *     next credit (server-authoritative timestamps, animated locally)
- *   - the open-source section: source download card, How To feature, GitHub, license
- *     and an honest share control
+ *   - the allowance in the main header: "3 / 5 requests" with a live countdown to the
+ *     next credit ("Next available in 02:41:18"), from server-authoritative timestamps
+ *     of the rolling window, animated locally with clock-skew correction
+ *   - the Open Source / Education section: the Source Edition card with the download,
+ *     the How To feature, and restrained GitHub, license and share actions
  * The educational pages themselves are unchanged. */
 
 // ---------------------------------------------------------------------------
-// Allowance in the masthead.
+// Allowance in the header.
 // ---------------------------------------------------------------------------
 const usage = document.createElement("a");
 usage.className = "hosted-usage";
 usage.href = "#hosted-source";
 usage.setAttribute("aria-live", "polite");
-usage.innerHTML = `<span class="hosted-usage-count"></span><span class="hosted-usage-detail"></span>`;
+// Two renderings of the same detail: the full sentence, and a short clock for phones
+// (CSS shows one or the other by width; the aria-label always carries the sentence).
+usage.innerHTML = `<span class="hosted-usage-count"></span><span class="hosted-usage-detail"></span><span class="hosted-usage-short" aria-hidden="true"></span>`;
 document.querySelector(".masthead .appearance-controls")?.before(usage);
 const countEl = usage.querySelector(".hosted-usage-count"),
-  detailEl = usage.querySelector(".hosted-usage-detail");
+  detailEl = usage.querySelector(".hosted-usage-detail"),
+  shortEl = usage.querySelector(".hosted-usage-short");
 
 let quota = null,
   skew = 0;
@@ -33,7 +37,8 @@ function paint() {
   const now = Date.now() + skew;
   if (quota.paused) {
     countEl.textContent = "Paused";
-    detailEl.textContent = "at public capacity";
+    detailEl.textContent = "At public capacity";
+    shortEl.textContent = "paused";
     usage.setAttribute("aria-label", "UCENTH Vision Intelligence is temporarily at public capacity.");
     usage.dataset.state = "paused";
     return;
@@ -42,12 +47,15 @@ function paint() {
     limit = quota.limit,
     next = quota.nextAt ? quota.nextAt - now : null;
   countEl.textContent = `${remaining} / ${limit}`;
+  countEl.append(Object.assign(document.createElement("span"), { className: "hosted-usage-unit", textContent: " requests" }));
   if (remaining === limit || next === null) {
-    detailEl.textContent = "free requests";
+    detailEl.textContent = "Free · rolling 5 hours";
+    shortEl.textContent = "free";
     usage.setAttribute("aria-label", `${remaining} of ${limit} free requests available.`);
   } else {
-    // Rolling window: one credit returns at a time, when its use expires.
-    detailEl.textContent = `next in ${clock(next)}`;
+    // Rolling window: one credit returns at a time, when its own use expires.
+    detailEl.textContent = `Next available in ${clock(next)}`;
+    shortEl.textContent = `in ${clock(next)}`;
     usage.setAttribute("aria-label", `${remaining} of ${limit} requests remaining. Next request available in ${spoken(next)}.`);
   }
   usage.dataset.state = remaining === 0 ? "exhausted" : "ok";
@@ -75,42 +83,53 @@ document.addEventListener("ucenth:timing", (e) => {
 });
 
 // ---------------------------------------------------------------------------
-// Open source / education section, before the footer.
+// Open Source / Education section, before the footer.
 // ---------------------------------------------------------------------------
 const section = document.createElement("section");
 section.className = "hosted-source";
 section.id = "hosted-source";
 section.setAttribute("aria-labelledby", "hosted-source-title");
 section.innerHTML = `
-  <div class="hosted-source-intro">
+  <div class="hosted-source-head">
     <p class="eyebrow">OPEN SOURCE / EDUCATION</p>
     <h2 id="hosted-source-title">Learn how it works.<br>Build your own.</h2>
-    <p>UCENTH Vision Intelligence is an open-source learning project for developers exploring AI, browser APIs and multimodal applications. An open-source educational project by UCENTH — Universal Central Host.</p>
+    <p class="hosted-source-lede">Everything on this page is open source: the camera pipeline, the structured Gemini identification, the document reader, the hands-free conversation with Charon, and the audio-reactive presence. The source is written to be read, with the reasoning next to the code, so a developer can run it locally in minutes and change any part of it.</p>
   </div>
-  <div class="hosted-source-grid">
-    <a class="hosted-card hosted-download" href="/download/ucenth-vision-intelligence-source.zip" download>
-      <span class="hosted-card-label">SOURCE CODE</span>
-      <span class="hosted-card-title">UCENTH Vision Intelligence</span>
-      <dl class="hosted-card-meta">
-        <div><dt>Edition</dt><dd class="hosted-meta-version">Source Edition</dd></div>
-        <div><dt>Files</dt><dd class="hosted-meta-files">educational source files</dd></div>
+  <div class="hosted-source-body">
+    <article class="hosted-edition" aria-labelledby="hosted-edition-title">
+      <p class="hosted-edition-label">SOURCE EDITION</p>
+      <h3 id="hosted-edition-title">UCENTH Vision Intelligence</h3>
+      <dl class="hosted-edition-meta">
+        <div><dt>Version</dt><dd class="hosted-meta-version">Source Edition</dd></div>
         <div><dt>License</dt><dd>MIT License</dd></div>
-        <div><dt>Size</dt><dd class="hosted-meta-size">ZIP</dd></div>
+        <div><dt>Contents</dt><dd class="hosted-meta-files">educational source files</dd></div>
+        <div><dt>Archive</dt><dd class="hosted-meta-size">ZIP</dd></div>
       </dl>
-      <span class="hosted-card-action">Download Source Code <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0 3.5-3.5M8 10 4.5 6.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <a class="hosted-download" href="/download/ucenth-vision-intelligence-source.zip" download>
+        <span>Download Source Code</span>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v8m0 0 3.5-3.5M8 10 4.5 6.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <p class="hosted-edition-note">Runs on your own machine with your own Google Cloud project. No account, no key in the browser, nothing sent anywhere but Google's APIs from your server.</p>
       <span class="hosted-card-status" role="status"></span>
-    </a>
-    <div class="hosted-card hosted-howto">
-      <span class="hosted-card-label">HOW TO</span>
-      <span class="hosted-card-title">Learn from the complete build</span>
-      <p>Camera capture, Gemini integration, structured AI output, contextual person intelligence, PDF and Word processing, translation, hands-free voice, Web Audio and WebGL, explained with the real code.</p>
-      <a class="hosted-link" href="/how-to.html">Explore the How To <span aria-hidden="true">→</span></a>
-    </div>
+    </article>
+    <aside class="hosted-howto" aria-labelledby="hosted-howto-title">
+      <p class="hosted-edition-label">HOW TO</p>
+      <h3 id="hosted-howto-title">Thirty lessons, taken from the real code.</h3>
+      <ul class="hosted-howto-list">
+        <li>Camera capture, stability detection and the countdown</li>
+        <li>Structured identification with Gemini, and why the schema is strict</li>
+        <li>Contextual person intelligence without face recognition</li>
+        <li>PDF and Word reading, page transcription and translation</li>
+        <li>Hands-free conversation: recognition, Charon and the state machine</li>
+        <li>Web Audio analysis and the WebGL particle presence</li>
+      </ul>
+      <a class="hosted-link" href="/how-to.html">Open the How To <span aria-hidden="true">→</span></a>
+    </aside>
   </div>
   <div class="hosted-source-footer">
     <a href="https://github.com/Ucenth/ucenth-vision-intelligence" target="_blank" rel="noopener noreferrer">GitHub</a>
     <a href="https://github.com/Ucenth/ucenth-vision-intelligence/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a>
-    <span class="hosted-share"><span>Help another developer discover it.</span><button type="button" id="hosted-share">Share Project</button><span class="hosted-share-status" role="status"></span></span>
+    <span class="hosted-share"><button type="button" id="hosted-share">Share Project</button><span class="hosted-share-status" role="status"></span></span>
   </div>`;
 document.querySelector("footer.project-footer")?.before(section);
 fetch("/api/source", { cache: "no-store" })

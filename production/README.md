@@ -170,6 +170,13 @@ Both phones completed five spoken turns against staging with `?diag=1`, and the 
 
 **Still open for the next physical round:** the exact iOS Safari recogniser error (now captured), whether the 22-second upstream failures recur with the retry in place (the log will show `HTTP 5xx` or `AbortError`), and Charon playback of long answers (4–18 s per answer dominates each turn; answers are already capped at about 90 words by the prompt).
 
+## Production (launched 28 September 2026)
+
+- **Service:** `vision-intelligence` in `europe-west2`, source-deployed with buildpacks: 1 vCPU, 512 MiB, concurrency 8, timeout 120 s, min 0 / max 3 instances, service account `vision-intelligence@vob-1619alpha.iam.gserviceaccount.com`, `QUOTA_STORE=firestore`, `PUBLIC_ORIGIN=https://vision.ucenth.com`, cookie secret `visitor-cookie-secret-prod` (its own secret, so production visitor ids and address hashes never collide with staging's). No `DIAGNOSTICS`, no `ACCEPTANCE_TEST_LIMIT`: `/diag.js` is 404 and `/api/quota` reports the public five per rolling five hours. Direct URL: https://vision-intelligence-271712590646.europe-west2.run.app.
+- **Branded domain path** (Cloud Run domain mappings are not offered in `europe-west2`, so a global external HTTPS load balancer fronts the service): static IPv4 `vision-ucenth-ip` = **34.36.197.1**; serverless NEG `vision-intelligence-neg` → backend service `vision-intelligence-backend` (EXTERNAL_MANAGED) → URL map `vision-ucenth-map` → Google-managed certificate `vision-ucenth-cert` for `vision.ucenth.com` → HTTPS proxy `vision-ucenth-https-proxy` → forwarding rule `vision-ucenth-https` (443). Port 80 (`vision-ucenth-http`) redirects to HTTPS via URL map `vision-ucenth-redirect`. The certificate provisions only once DNS resolves to the static IP (typically 15–60 minutes after the record is live).
+- **DNS at the registrar (Hostinger):** one record, type `A`, host/name `vision`, value `34.36.197.1`, TTL default. No CNAME, no other records are needed for the site.
+- **Staging** stays as it is (`vision-intelligence-staging`, diagnostics and the acceptance override on) for physical tests; it is not linked from anywhere public.
+
 ## Staging results (28 September 2026)
 
 Staging service: `vision-intelligence-staging` in `europe-west2`, source-deployed with buildpacks (no Docker), 1 vCPU / 1 GiB, concurrency 8, timeout 120 s, min 0 / max 3 instances, Firestore quota store, cookie secret from Secret Manager. Not connected to any domain.
