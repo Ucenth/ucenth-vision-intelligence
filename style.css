@@ -59,11 +59,14 @@ label:focus-within {
   text-decoration: none;
   font-weight: 700;
 }
+/* The approved mark: a contained circular brand mark with its own dark surface, so it
+   reads the same on both themes. Served as a 64 px derivative, shown at 32 px. */
 .brand-mark {
-  font-size: 33px;
-  letter-spacing: -4px;
-  color: var(--blue);
-  margin-right: 8px;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  margin-right: 2px;
 }
 .brand-caption {
   font-size: 8px;

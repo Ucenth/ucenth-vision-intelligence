@@ -53,6 +53,16 @@ Object.assign(types, {
   "/LICENSE": "text/plain",
   "/THIRD-PARTY-NOTICES.md": "text/plain",
   "/public/assets/scanner.png": "image/png",
+  "/favicon.ico": "image/x-icon",
+  "/apple-touch-icon.png": "image/png",
+  "/site.webmanifest": "application/manifest+json",
+  "/public/assets/brand/mark-64.png": "image/png",
+  "/public/assets/brand/mark-128.png": "image/png",
+  "/public/assets/brand/mark-192.png": "image/png",
+  "/public/assets/brand/mark-512.png": "image/png",
+  "/public/assets/brand/favicon-16.png": "image/png",
+  "/public/assets/brand/favicon-32.png": "image/png",
+  "/public/assets/brand/favicon-48.png": "image/png",
 });
 const json = (res, status, data) => {
   res.writeHead(status, { "Content-Type": "application/json" });

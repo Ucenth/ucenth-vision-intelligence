@@ -1,3 +1,5 @@
+<img src="public/assets/brand/mark-128.png" alt="" width="64" height="64" align="right" />
+
 # UCENTH Vision Intelligence
 
 **Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH.** Hold a subject steady, capture one real photograph, and explore a cautious Gemini identification.
