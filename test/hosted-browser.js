@@ -50,7 +50,7 @@ try {
     await upload();
     await page.waitForFunction(() => ["LISTENING", "USER_SPEAKING"].includes(document.querySelector(".voice-panel")?.dataset.state), null, { timeout: 20000 });
     // After the last credit the line switches to the exhaustion wording with the wait time.
-    await page.waitForFunction((n) => document.querySelector(".hosted-usage-count")?.textContent === `${n} / 5` && /next in dd:dd:dd/.test(document.querySelector(".hosted-usage-detail")?.textContent || ""), LIMIT - i, { timeout: 15000 });
+    await page.waitForFunction((n) => document.querySelector(".hosted-usage-count")?.textContent === `${n} / 5` && /next in \d\d:\d\d:\d\d/.test(document.querySelector(".hosted-usage-detail")?.textContent || ""), LIMIT - i, { timeout: 15000 });
     await page.getByRole("button", { name: "Pause", exact: true }).click();
     await page.locator("#reset").click();
   }
