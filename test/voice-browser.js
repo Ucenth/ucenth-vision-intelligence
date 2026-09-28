@@ -207,7 +207,11 @@ try {
   // iOS Safari lifecycle: the native recogniser aborts a few milliseconds after start.
   // The session must fall back to recorded clips once, remember that for the page, and
   // start the NEXT conversation directly on the server path without a native attempt.
-  const ios = await context.newPage(); const iosErrors = [];
+  // An iPhone user agent so the mobile rules apply (no desktop analyser stream on the
+  // native path, iOS keepalive on the recorded-clip path).
+  const iosContext = await browser.newContext({ permissions: ["microphone"], viewport: { width: 390, height: 844 },
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1" });
+  const ios = await iosContext.newPage(); const iosErrors = [];
   ios.on("pageerror", e => iosErrors.push(e.message));
   await ios.addInitScript(() => {
     localStorage.setItem("ucenth-voice", "on");
@@ -248,8 +252,11 @@ try {
   // Resume after idle with a stale microphone: the probe sees digital silence, the audio
   // graph is rebuilt, a fresh stream is requested, and samples flow on the second try.
   await ios.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING", null, { timeout: 10000 });
+  // The iOS keepalive tone runs only while the recorded-clip path holds a microphone.
+  assert.ok(await ios.evaluate(() => window.diagLog.some(d => d.event === "keepalive" && d.on === true)), "keepalive started before the microphone was requested");
   await ios.getByRole("button", { name: "End conversation", exact: true }).click();
   await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "CONVERSATION_ENDED");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "keepalive").at(-1).on), false, "keepalive released with the microphone");
   const micCallsBefore = await ios.evaluate(() => window.micCalls);
   await ios.evaluate(() => { window.silentNext = true; });
   await ios.getByRole("button", { name: "Resume", exact: true }).click();

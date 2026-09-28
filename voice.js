@@ -141,6 +141,44 @@ function setAudioSession(type) {
   } catch {}
 }
 /**
+ * iOS keeps microphone input alive only while the page's audio session is active on
+ * the OUTPUT side. Physical reports show the pattern exactly: a capture right after
+ * Charon has spoken carries a healthy signal, a capture after the conversation was
+ * ended and the page sat idle for 13 seconds or more returns a live, unmuted track of
+ * pure zeros, and rebuilding the AudioContext does not revive it. While the recorded-
+ * clip path holds a microphone, an inaudible 20 Hz tone at one ten-thousandth of full
+ * scale keeps the output side active. Started from the person's tap before the
+ * microphone is requested, stopped with the microphone. iOS only.
+ */
+let keepalive = null;
+function startKeepalive() {
+  if (keepalive?.context === audioContext) return;
+  stopKeepalive();
+  try {
+    const oscillator = audioContext.createOscillator(),
+      gain = audioContext.createGain();
+    oscillator.frequency.value = 20;
+    gain.gain.value = 0.0001;
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    keepalive = { oscillator, gain, context: audioContext };
+    diag("keepalive", { on: true, contextState: audioContext.state });
+  } catch (error) {
+    diag("keepalive", { on: false, error: error?.name || "error" });
+  }
+}
+function stopKeepalive() {
+  if (!keepalive) return;
+  try {
+    keepalive.oscillator.stop();
+    keepalive.oscillator.disconnect();
+    keepalive.gain.disconnect();
+  } catch {}
+  keepalive = null;
+  diag("keepalive", { on: false });
+}
+/**
  * Last resort for a microphone that delivers digital silence: iOS can leave the whole
  * audio graph stale after an idle period even though the context says "running" and
  * the track says "live". Closing and recreating the context, then asking for a fresh
@@ -149,8 +187,10 @@ function setAudioSession(type) {
  */
 async function recreateAudioContext() {
   const previous = audioContext;
+  stopKeepalive();
+  // iOS has taken 11 seconds to close a context; never make the person wait for it.
   try {
-    await previous?.close();
+    await Promise.race([previous?.close(), wait(1000)]);
   } catch {}
   audioContext = new (window.AudioContext || window.webkitAudioContext)();
   audioUnlock = audioContext.resume();
@@ -301,6 +341,7 @@ function stopMic(c) {
   }
   c.stream?.getTracks().forEach((t) => t.stop());
   c.stream = null;
+  stopKeepalive();
   c.micSource?.disconnect();
   c.micSource = null;
   c.micAnalyser?.disconnect();
@@ -556,6 +597,11 @@ async function listenNative(c, turn, attempt, caps) {
  */
 async function listenServer(c, turn, attempt, caps) {
   setAudioSession("play-and-record");
+  if (caps.ios) {
+    startKeepalive();
+    await wait(120); // let the output side become active before input is requested
+    if (!valid(c, turn) || c.listeningAttempt !== attempt) return;
+  }
   const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
   if (!valid(c, turn) || c.listeningAttempt !== attempt || !c.autoListen || document.hidden) {
     stream.getTracks().forEach((t) => t.stop());
@@ -1001,6 +1047,7 @@ document.addEventListener("ucenth:result-presented", (event) => {
     // The one primary control: its meaning follows the state it was rendered for.
     ui.primary.onclick = () => {
       unlock();
+      c.micRecoveries = 0; // a deliberate tap earns a fresh microphone recovery
       const s = c.state;
       if (["LISTENING", "USER_SPEAKING", "OPENING_MICROPHONE"].includes(s)) {
         c.autoListen = false;
