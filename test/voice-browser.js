@@ -211,8 +211,16 @@ try {
   ios.on("pageerror", e => iosErrors.push(e.message));
   await ios.addInitScript(() => {
     localStorage.setItem("ucenth-voice", "on");
-    window.diagLog = []; window.nativeStarts = 0;
+    window.diagLog = []; window.nativeStarts = 0; window.silentNext = false; window.micCalls = 0;
     document.addEventListener("ucenth:voice-diag", e => window.diagLog.push(e.detail));
+    // After an idle period iOS can hand back a live, unmuted track that carries only
+    // digital zeros. One call can be made to behave that way from the test.
+    const realMic = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async options => {
+      window.micCalls++;
+      if (window.silentNext) { window.silentNext = false; return new AudioContext().createMediaStreamDestination().stream; }
+      return realMic(options);
+    };
     window.SpeechRecognition = class {
       start() { window.nativeStarts++; setTimeout(() => this.onstart?.(), 0); setTimeout(() => this.onaudiostart?.(), 2); setTimeout(() => this.onerror?.({ error: "aborted" }), 7); }
       abort() {}
@@ -237,6 +245,22 @@ try {
   assert.equal(await ios.evaluate(() => window.nativeStarts), 1, "no second native attempt on this page");
   await ios.waitForFunction(() => window.diagLog.filter(d => d.event === "audio-context").length >= 2, null, { timeout: 10000 });
   assert.ok(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context").every(d => ["before", "after", "resumed"].every(k => k in d))), "audio-context diagnostics carry before/after/resumed");
+  // Resume after idle with a stale microphone: the probe sees digital silence, the audio
+  // graph is rebuilt, a fresh stream is requested, and samples flow on the second try.
+  await ios.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING", null, { timeout: 10000 });
+  await ios.getByRole("button", { name: "End conversation", exact: true }).click();
+  await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "CONVERSATION_ENDED");
+  const micCallsBefore = await ios.evaluate(() => window.micCalls);
+  await ios.evaluate(() => { window.silentNext = true; });
+  await ios.getByRole("button", { name: "Resume", exact: true }).click();
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.silent"), null, { timeout: 10000 });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context.recreated"), null, { timeout: 10000 });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.signal"), null, { timeout: 10000 });
+  const recovery = await ios.evaluate(() => window.diagLog.filter(d => ["microphone.silent", "audio-context.recreated", "microphone.signal"].includes(d.event)).map(d => d.event));
+  assert.deepEqual(recovery, ["microphone.silent", "audio-context.recreated", "microphone.signal"], "one silent probe, one rebuild, then a live signal");
+  assert.equal(await ios.evaluate(() => window.micCalls), micCallsBefore + 2, "a fresh stream was requested after the stale one");
+  assert.ok(await ios.evaluate(() => window.diagLog.find(d => d.event === "microphone.signal").peak > 0));
+  assert.ok(["LISTENING", "USER SPEAKING"].includes(await ios.locator(".voice-state").textContent()), "listening continues on the recovered microphone");
   assert.deepEqual(iosErrors, []);
-  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup and iOS fallback memory.");
+  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup, iOS fallback memory and stale-microphone recovery.");
 } finally { await browser.close(); }

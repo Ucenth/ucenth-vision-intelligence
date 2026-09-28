@@ -96,6 +96,7 @@ export function capabilities() {
     recorderMime: recorderMime(),
     audioContext: !!(window.AudioContext || window.webkitAudioContext),
     audioContextState: audioContext?.state || "none",
+    audioSession: navigator.audioSession?.type || "none",
     // iOS Chrome and Firefox have no native recogniser at all; everything else tries
     // native first and falls back per session if it fails.
     nativeRecognition: !!Recognition,
@@ -124,7 +125,38 @@ function unlock() {
     audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
     audioUnlock = audioContext.resume();
     audioUnlock.catch(() => {});
+    keepRecordingSession();
   } catch {}
+}
+/**
+ * iOS Safari (17+) exposes navigator.audioSession. Left on "auto", the session drops
+ * to playback-only once capture stops and audio plays, and a later microphone stream
+ * can come back with no samples at all. Asking for "play-and-record" keeps capture
+ * and Charon playback in one session. Other browsers have no such property.
+ */
+function keepRecordingSession() {
+  try {
+    if (navigator.audioSession && navigator.audioSession.type !== "play-and-record") navigator.audioSession.type = "play-and-record";
+  } catch {}
+}
+/**
+ * Last resort for a microphone that delivers digital silence: iOS can leave the whole
+ * audio graph stale after an idle period even though the context says "running" and
+ * the track says "live". Closing and recreating the context, then asking for a fresh
+ * stream, is what brings samples back. Nothing is playing while we listen, so the
+ * swap is safe; Charon creates its playback nodes on the current context each time.
+ */
+async function recreateAudioContext() {
+  const previous = audioContext;
+  try {
+    await previous?.close();
+  } catch {}
+  audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  audioUnlock = audioContext.resume();
+  audioUnlock.catch(() => {});
+  keepRecordingSession();
+  await audioUnlock;
+  diag("audio-context.recreated", { state: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
 }
 for (const id of ["start", "upload", "reset"]) $(id)?.addEventListener("click", unlock, true);
 
@@ -435,6 +467,8 @@ async function listenNative(c, turn, attempt, caps) {
   for (const name of ["start", "audiostart", "soundstart", "soundend", "audioend"])
     recognition[`on${name}`] = () => {
       if (name === "audiostart") sawAudio = true;
+      // iOS can take seconds to actually start; "decisive" is measured from its start.
+      if (name === "start") startedAt = performance.now();
       diag(`recognition.${name}`);
     };
   // Use the recogniser's speech classifier, not raw volume spikes from the renderer.
@@ -585,7 +619,30 @@ async function listenServer(c, turn, attempt, caps) {
   let noise = 0.002,
     started = performance.now(),
     lastLoud = 0,
-    peak = 0;
+    peak = 0,
+    probed = false;
+  // A live, unmuted track that delivers exact digital zeros for the first 700 ms is a
+  // stale iOS microphone (seen physically after an idle period: peak 0, 5-byte clip).
+  // Real microphones always carry a noise floor. Recover once per listening session
+  // by rebuilding the audio graph and asking for a fresh stream; a second failure pauses.
+  const MIC_PROBE_MS = 700;
+  const recoverMicrophone = async () => {
+    stopped = true;
+    cancelAnimationFrame(c.pollFrame);
+    const attemptNo = (c.micRecoveries || 0) + 1;
+    diag("microphone.silent", { attempt: attemptNo, contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
+    stopMic(c); // discards this recorder and its clip
+    if (attemptNo > 1) {
+      pauseConversation(c, "microphone-silent");
+      c.ui.notice.textContent = "The microphone isn't delivering sound. Try again, or type your question.";
+      return;
+    }
+    c.micRecoveries = attemptNo;
+    await recreateAudioContext();
+    if (!valid(c, turn)) return;
+    c.listeningAttempt = null;
+    listen(c);
+  };
   const poll = () => {
     if (!live() || stopped) return;
     analyser.getFloatTimeDomainData(data);
@@ -594,6 +651,12 @@ async function listenServer(c, turn, attempt, caps) {
     const rms = Math.sqrt(sum / data.length),
       now = performance.now();
     if (rms > peak) peak = rms;
+    if (!probed && now - started > MIC_PROBE_MS) {
+      probed = true;
+      if (peak === 0) return void recoverMicrophone();
+      c.micRecoveries = 0; // samples are flowing: this session is healthy
+      diag("microphone.signal", { peak: +peak.toFixed(4), noise: +noise.toFixed(4) });
+    }
     if (now - started < 400) noise = Math.min(0.01, noise * 0.9 + rms * 0.1);
     else if (rms > Math.max(0.012, noise * 3)) {
       lastLoud = now;
