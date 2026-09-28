@@ -65,6 +65,11 @@ const readVoice = () => {
     return true;
   }
 };
+// Remembered for this page only, never stored: a native recogniser that aborted
+// decisively (before any result, within a moment of starting) is not tried again in
+// later conversations, which saves the two-second detour on iOS Safari. A reload,
+// or a browser update that fixes it, starts from a clean slate.
+let nativeUnusable = false;
 let voiceEnabled = readVoice(),
   audioContext,
   current = null,
@@ -351,8 +356,8 @@ function voiceUnavailable(c, message) {
 async function listen(c) {
   if (!valid(c) || !voiceEnabled || !c.autoListen || document.hidden || c.listeningAttempt || c.recognition || c.recorder) return;
   const caps = capabilities();
-  if (!c.sttPath) c.sttPath = caps.nativeRecognition ? "native" : caps.mediaRecorder && caps.getUserMedia ? "server" : "none";
-  diag("listen", { path: c.sttPath, mobile: caps.mobile });
+  if (!c.sttPath) c.sttPath = caps.nativeRecognition && !nativeUnusable ? "native" : caps.mediaRecorder && caps.getUserMedia ? "server" : "none";
+  diag("listen", { path: c.sttPath, mobile: caps.mobile, nativeUnusable });
   if (c.sttPath === "none") return voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
   stopMic(c);
   const turn = c.turn,
@@ -403,7 +408,8 @@ async function listenNative(c, turn, attempt, caps) {
   let speechStarted = false,
     candidateAt = null,
     sawAudio = false,
-    committed = false;
+    committed = false,
+    startedAt = 0;
   // One canonical transcript per listening session (lib/transcript.js): revisions at
   // the same result index replace, new indexes append, duplicates are ignored. The
   // LIVE view is shown as it changes; the COMMITTED question is sent exactly once.
@@ -483,7 +489,11 @@ async function listenNative(c, turn, attempt, caps) {
     if (caps.mediaRecorder && caps.getUserMedia && !c.fellBack) {
       c.fellBack = true;
       c.sttPath = "server";
-      diag("fallback", { to: "server", because: event.error });
+      // iOS Safari aborts a few milliseconds after start, before any result: that is
+      // decisive for this page, so later conversations skip straight to the server path.
+      const sinceStart = Math.round(performance.now() - startedAt);
+      if (["aborted", "audio-capture"].includes(event.error) && !transcript.live() && sinceStart < 1500) nativeUnusable = true;
+      diag("fallback", { to: "server", because: event.error, sinceStart, remembered: nativeUnusable });
       stopMic(c);
       c.listeningAttempt = null;
       listen(c);
@@ -497,6 +507,7 @@ async function listenNative(c, turn, attempt, caps) {
     if (live() && transcript.hasFinal()) return submit("recognition-ended");
     if (live()) pauseConversation(c, speechStarted ? "recognition-ended" : "no-speech");
   };
+  startedAt = performance.now();
   recognition.start();
   mark("listening");
   state(c, "LISTENING");
@@ -518,18 +529,24 @@ async function listenServer(c, turn, attempt, caps) {
   // idle period or a system interruption; the analyser then reads silence and no
   // speech would ever be detected. Resume it here, inside the gesture chain, and log
   // the state so a diagnostics report shows what the noise gate was listening to.
-  if (audioContext.state !== "running") {
+  const before = audioContext.state;
+  let resumed = "not-needed";
+  if (before !== "running") {
     try {
       await audioContext.resume();
-    } catch {}
+      resumed = "resolved";
+    } catch (error) {
+      resumed = `rejected:${error?.name || "error"}`;
+    }
   }
-  diag("audio-context", { state: audioContext.state });
+  diag("audio-context", { before, after: audioContext.state, resumed });
   const mime = caps.recorderMime;
   const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
   c.recorder = recorder;
   const chunks = [];
   let speechStarted = false,
-    stopped = false;
+    stopped = false,
+    recordStartedAt = performance.now();
   const live = () => valid(c, turn) && c.recorder === recorder;
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size) chunks.push(e.data);
@@ -537,7 +554,7 @@ async function listenServer(c, turn, attempt, caps) {
   recorder.onstop = async () => {
     if (!live() && !stopped) return;
     const blob = new Blob(chunks, { type: recorder.mimeType || mime || "audio/webm" });
-    diag("clip", { bytes: blob.size, type: blob.type, speechStarted });
+    diag("clip", { bytes: blob.size, type: blob.type, seconds: +((performance.now() - recordStartedAt) / 1000).toFixed(2), speechStarted });
     stopMic(c);
     if (!valid(c, turn) || !speechStarted || blob.size < 1000) return pauseConversation(c, speechStarted ? "empty-clip" : "no-speech");
     c.ui.interim.textContent = "…";
@@ -596,7 +613,7 @@ async function listenServer(c, turn, attempt, caps) {
     cancelAnimationFrame(c.pollFrame);
     // Peak level and gate settings tell a report whether silence was real or the
     // analyser was reading nothing (peak 0 with a running context means no signal).
-    diag("recorder.stop", { why, peak: +peak.toFixed(4), noise: +noise.toFixed(4), contextState: audioContext.state });
+    diag("recorder.stop", { why, peak: +peak.toFixed(4), noise: +noise.toFixed(4), threshold: +Math.max(0.012, noise * 3).toFixed(4), speechStarted, contextState: audioContext.state });
     try {
       recorder.stop();
     } catch {
@@ -604,6 +621,7 @@ async function listenServer(c, turn, attempt, caps) {
     }
   };
   recorder.start(250);
+  recordStartedAt = performance.now();
   mark("listening");
   state(c, "LISTENING");
   poll();

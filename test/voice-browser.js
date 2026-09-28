@@ -204,5 +204,39 @@ try {
   await page.locator("#reset").click();
   assert.equal(await page.locator(".voice-panel").count(), 0);
   assert.deepEqual(errors, []);
-  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout and failure/reset cleanup.");
+  // iOS Safari lifecycle: the native recogniser aborts a few milliseconds after start.
+  // The session must fall back to recorded clips once, remember that for the page, and
+  // start the NEXT conversation directly on the server path without a native attempt.
+  const ios = await context.newPage(); const iosErrors = [];
+  ios.on("pageerror", e => iosErrors.push(e.message));
+  await ios.addInitScript(() => {
+    localStorage.setItem("ucenth-voice", "on");
+    window.diagLog = []; window.nativeStarts = 0;
+    document.addEventListener("ucenth:voice-diag", e => window.diagLog.push(e.detail));
+    window.SpeechRecognition = class {
+      start() { window.nativeStarts++; setTimeout(() => this.onstart?.(), 0); setTimeout(() => this.onaudiostart?.(), 2); setTimeout(() => this.onerror?.({ error: "aborted" }), 7); }
+      abort() {}
+    };
+  });
+  await ios.route("**/api/identify", route => route.fulfill({ json: identity }));
+  await ios.route("**/api/speech", route => route.fulfill({ contentType: "audio/wav", body: wav }));
+  await ios.route("**/api/transcribe", route => route.fulfill({ json: { text: "Can you still hear me clearly?" } }));
+  await ios.route("**/api/follow-up", route => route.fulfill({ json: { answer: "Yes.", userSuppliedIdentity: "" } }));
+  await ios.goto(base);
+  await ios.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "fallback" && d.because === "aborted" && d.remembered === true), null, { timeout: 20000 });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "listen" && d.path === "server"), null, { timeout: 10000 });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context"), null, { timeout: 10000 });
+  assert.equal(await ios.evaluate(() => window.nativeStarts), 1);
+  // Second conversation on the same page: straight to the server path, no native start.
+  await ios.locator("#reset").click();
+  await ios.locator("#upload").setInputFiles({ name: "fixture-2.jpg", mimeType: "image/jpeg", buffer: image });
+  await ios.waitForFunction(() => window.diagLog.filter(d => d.event === "listen").length >= 3, null, { timeout: 20000 });
+  const listens = await ios.evaluate(() => window.diagLog.filter(d => d.event === "listen").map(d => `${d.path}:${d.nativeUnusable}`));
+  assert.deepEqual(listens.slice(-1), ["server:true"], `second conversation skipped the native recogniser (${listens.join(", ")})`);
+  assert.equal(await ios.evaluate(() => window.nativeStarts), 1, "no second native attempt on this page");
+  await ios.waitForFunction(() => window.diagLog.filter(d => d.event === "audio-context").length >= 2, null, { timeout: 10000 });
+  assert.ok(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context").every(d => ["before", "after", "resumed"].every(k => k in d))), "audio-context diagnostics carry before/after/resumed");
+  assert.deepEqual(iosErrors, []);
+  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup and iOS fallback memory.");
 } finally { await browser.close(); }
