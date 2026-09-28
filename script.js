@@ -1,5 +1,6 @@
 /* UCENTH Vision Intelligence — UCENTH, Universal Central Host. */
 import { StabilityTracker } from "./lib/stability.js";
+import { armGuide, cancelGuide, guideTo, videoReady } from "./lib/viewport-guide.js";
 const $ = (id) => document.getElementById(id);
 const video = $("camera"),
   capture = $("capture"),
@@ -127,6 +128,9 @@ async function startCamera() {
   const token = ++generation;
   $("start").disabled = true;
   $("upload-label").hidden = true;
+  // On a phone the camera stage sits below the fold: once the video is genuinely
+  // playing, the viewport is guided to it (never while the permission prompt is open).
+  armGuide("camera");
   try {
     if (!navigator.mediaDevices?.getUserMedia)
       throw new Error("Camera access requires localhost or HTTPS.");
@@ -163,6 +167,10 @@ async function startCamera() {
     setPhase("live");
     alignGuide();
     status("KEEP FRAME EMPTY · CALIBRATING");
+    videoReady(video).then((ready) => {
+      if (token === generation && ready) guideTo($("stage").closest(".viewer"), "camera");
+      else cancelGuide("camera");
+    });
     stream.getVideoTracks()[0].addEventListener("ended", () => {
       if (["live", "locking"].includes(phase)) {
         stopStream();
@@ -172,6 +180,7 @@ async function startCamera() {
     timer = setInterval(analyzeFrame, 100);
   } catch (error) {
     stopStream();
+    cancelGuide("camera"); // a denied or failed camera never scrolls to an empty stage
     const messages = {
       NotAllowedError:
         "Camera access was denied. Allow camera access in Chrome, then try again.",
@@ -281,6 +290,7 @@ function makeEdges() {
 async function captureSource(source) {
   if (["scanning", "results"].includes(phase)) return;
   setPhase("scanning");
+  armGuide("result"); // fulfilled only when a result is actually rendered
   clearInterval(timer);
   $("countdown").hidden = true;
   $("upload-label").hidden = true;
@@ -614,6 +624,7 @@ function compactObservation(text) {
  * and conversation history is cleared by the listeners in voice.js and document.js.
  */
 function clear() {
+  cancelGuide();
   document.dispatchEvent(new Event("ucenth:scan-reset"));
   $("results").closest(".workspace").classList.remove("has-result");
   generation++;
@@ -663,6 +674,7 @@ $("upload").addEventListener("change", async (event) => {
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ].includes(file.type) || /\.(pdf|docx)$/i.test(file.name);
   if (documentFile) {
+    armGuide("result"); // an upload never scrolls to the camera, only to its result
     clear();
     $("upload-label").hidden = true;
     $("start").hidden = true;
@@ -707,4 +719,10 @@ document.addEventListener("visibilitychange", () => {
     $("hint").textContent =
       "Camera paused while the page was hidden. Start again when you’re ready.";
   }
+});
+// A rendered result (object, person or document) is the second guided transition on a
+// phone: the identity heading lands at the top of the viewport with the conversation
+// presence below it. Nothing after this (answers, states, quota) moves the page again.
+document.addEventListener("ucenth:result-presented", () => {
+  guideTo($("results"), "result");
 });

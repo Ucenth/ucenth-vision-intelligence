@@ -35,6 +35,7 @@ const types = {
   "/style.css": "text/css",
   "/script.js": "text/javascript",
   "/lib/stability.js": "text/javascript",
+  "/lib/viewport-guide.js": "text/javascript",
   "/voice.js": "text/javascript",
   "/voice.css": "text/css",
   "/lib/particle-presence.js": "text/javascript",

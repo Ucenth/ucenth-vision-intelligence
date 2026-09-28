@@ -999,3 +999,11 @@ footer > span:first-child {
     margin-right: auto;
   }
 }
+
+/* Viewport guidance (phones): the scroll destinations keep clear of any sticky header.
+   lib/viewport-guide.js measures the header and sets --guide-offset; the margin itself
+   lives here so no pixel offsets are scattered through JavaScript. */
+.viewer,
+#results {
+  scroll-margin-top: calc(var(--guide-offset, 0px) + 12px);
+}

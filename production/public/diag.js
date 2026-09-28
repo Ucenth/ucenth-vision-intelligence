@@ -78,3 +78,4 @@ panel.querySelector("[data-clear]").onclick = () => {
   timing.textContent = events.textContent = "";
 };
 panel.querySelector("[data-close]").onclick = () => (panel.hidden = true);
+document.addEventListener("ucenth:viewport-guide", (e) => push(events, lines.events, `${String(Math.round(performance.now())).padStart(6)}  viewport-guide  ${JSON.stringify(e.detail)}`));
