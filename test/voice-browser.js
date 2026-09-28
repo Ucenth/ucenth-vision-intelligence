@@ -40,12 +40,28 @@ try {
       start() {
         window.currentRecognition = this;
         voiceProbe.recognition = true; voiceProbe.starts++;
-        // Turn 3 behaves like Android Chrome: no interim text, the question arrives as
-        // two small FINAL fragments 300 ms apart while the person is still talking.
+        const final = (transcript) => Object.assign([{ transcript }], { isFinal: true });
+        // Turn 3 is the Android Chrome pattern from the physical diagnostics: no interim
+        // text, the SAME result index re-emitted as a growing final hypothesis (plus an
+        // exact duplicate), then a second index for the rest of the sentence.
         if (voiceProbe.starts === 3) this.timer = setTimeout(() => {
-          this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: "What can" }], { isFinal: true })] });
-          this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1,
-            results: [Object.assign([{ transcript: "What can" }], { isFinal: true }), Object.assign([{ transcript: " you see?" }], { isFinal: true })] }), 300);
+          this.onresult?.({ resultIndex: 0, results: [final("What")] });
+          this.timer = setTimeout(() => {
+            this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+            this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+            this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] }), 250);
+          }, 250);
+        }, 180);
+        // Turn 4: a late second segment arrives after the settle timer has already started.
+        else if (voiceProbe.starts === 4) this.timer = setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+          this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] }), 500);
+        }, 180);
+        // Turn 5: the recogniser ends on its own right after accumulated fragments.
+        else if (voiceProbe.starts === 5) this.timer = setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+          this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] });
+          this.onend?.();
         }, 180);
         else if (voiceProbe.starts <= 5) this.timer = setTimeout(() => {
           this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: "What can you see?" }], { isFinal: false })] });

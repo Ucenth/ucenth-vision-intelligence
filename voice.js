@@ -34,6 +34,7 @@
  * and Google for transcription only. Charon (Cloud Text-to-Speech) runs server-side
  * through /api/speech; the browser only receives WAV audio. */
 import { createParticlePresence } from "./lib/particle-presence.js";
+import { createTranscript } from "./lib/transcript.js";
 
 // After playback ends, wait a little before listening again so the room's echo of
 // Charon's last word is not transcribed as the user's next question. The guard was
@@ -45,11 +46,11 @@ export const SPEECH_START_TIMEOUT_MS = 5000;
 // The recogniser's onspeechstart fires on brief noises too. Requiring speech to persist
 // for 200 ms (or a transcript to arrive) filters clicks and coughs.
 const SPEECH_DEBOUNCE_MS = 200;
-// Native path: Android Chrome delivers a question as several small FINAL fragments
-// (no interim text at all), one every few hundred milliseconds while the person is
-// still talking. Submitting the first fragment would cut the question off mid-sentence,
-// so finals are collected and sent once no new fragment arrives for this long.
-// Desktop Chrome sends one final after the person stops, so it costs the same pause.
+// Native path: Android Chrome sends no interim text; it re-emits the same result index
+// as a growing FINAL hypothesis every few hundred milliseconds while the person is
+// still talking (see lib/transcript.js for how those revisions are assembled into one
+// canonical question). The question is sent once no revised or new final arrives for
+// this long. Desktop Chrome sends one final after the person stops: the same pause.
 const FINAL_SETTLE_MS = 800;
 // Server path: end the clip after this much silence following speech, and never
 // record longer than MAX_CLIP_MS.
@@ -402,14 +403,18 @@ async function listenNative(c, turn, attempt, caps) {
   let speechStarted = false,
     candidateAt = null,
     sawAudio = false,
-    finals = "";
+    committed = false;
+  // One canonical transcript per listening session (lib/transcript.js): revisions at
+  // the same result index replace, new indexes append, duplicates are ignored. The
+  // LIVE view is shown as it changes; the COMMITTED question is sent exactly once.
+  const transcript = createTranscript();
   const live = () => valid(c, turn) && c.recognition === recognition;
-  // Send everything final so far as one question (see FINAL_SETTLE_MS).
   const submit = (why) => {
     clearTimeout(c.finalTimer);
     c.finalTimer = null;
-    const question = finals.trim();
-    if (!live() || !question) return;
+    const question = transcript.text();
+    if (!live() || !question || committed) return;
+    committed = true;
     diag("recognition.submit", { why, chars: question.length });
     mark("speech-final");
     ask(c, question);
@@ -443,30 +448,33 @@ async function listenNative(c, turn, attempt, caps) {
   };
   recognition.onresult = (event) => {
     if (!live() || !["LISTENING", "USER_SPEAKING"].includes(c.state)) return;
-    let final = "",
-      interim = "";
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const text = event.results[i][0].transcript;
-      if (event.results[i].isFinal) final += text;
-      else interim += text;
-    }
-    diag("recognition.result", { interimChars: interim.length, finalChars: final.length });
-    if ((final + interim).trim()) confirmSpeech();
+    const outcome = transcript.update(event);
+    // The raw event shape is logged so the platform's result semantics can be read
+    // from a diagnostics report: index, list length, and each entry's finality/size.
+    diag("recognition.result", {
+      resultIndex: event.resultIndex,
+      results: event.results.length,
+      entries: [...event.results].slice(event.resultIndex).map((r) => `${r.isFinal ? "F" : "i"}${(r[0]?.transcript || "").trim().length}`).join(","),
+      outcome,
+      textChars: transcript.text().length,
+    });
+    if (transcript.live()) confirmSpeech();
     c.particles?.pulse(0.5);
-    if (final.trim()) {
-      finals += (finals && !finals.endsWith(" ") ? " " : "") + final.trim();
+    // A changed final (new segment or revision) restarts the settle timer; a duplicate
+    // or an interim guess does not, so a stream of repeats cannot delay the question.
+    if (outcome === "segment" || outcome === "revision") {
       clearTimeout(c.finalTimer);
       c.finalTimer = setTimeout(() => submit("settled"), FINAL_SETTLE_MS);
     }
-    // Show the person what has been heard so far: settled finals plus the live guess.
-    c.ui.interim.textContent = (finals + " " + interim).trim();
+    // Live view: one text node updated in place, never appended to.
+    c.ui.interim.textContent = transcript.live();
   };
   recognition.onerror = (event) => {
     if (c.recognition !== recognition || !valid(c, turn)) return;
     diag("recognition.error", { error: event.error, sawAudio });
     if (event.error === "no-speech") return;
     // A question already heard is worth more than a retry: send it, then move on.
-    if (finals.trim()) return submit("recognition-error");
+    if (transcript.hasFinal()) return submit("recognition-error");
     if (event.error === "not-allowed" || event.error === "service-not-allowed")
       return voiceUnavailable(c, event.error === "not-allowed" ? "Microphone access was denied. You can continue by typing." : "Voice couldn't start on this device. You can continue by typing.");
     // Anything else (audio-capture, network, aborted by the platform): switch this
@@ -483,9 +491,9 @@ async function listenNative(c, turn, attempt, caps) {
     voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
   };
   recognition.onend = () => {
-    diag("recognition.end", { speechStarted, sawAudio, pendingChars: finals.trim().length });
+    diag("recognition.end", { speechStarted, sawAudio, pendingChars: transcript.text().length, committed });
     // The recogniser closed on its own: send what it heard rather than waiting.
-    if (live() && finals.trim()) return submit("recognition-ended");
+    if (live() && transcript.hasFinal()) return submit("recognition-ended");
     if (live()) pauseConversation(c, speechStarted ? "recognition-ended" : "no-speech");
   };
   recognition.start();
