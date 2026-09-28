@@ -20,7 +20,7 @@ import { randomBytes } from "node:crypto";
 import JSZip from "jszip";
 import { createServer } from "../server.js";
 import { files } from "../scripts/release-files.js";
-import { PUBLIC_LIMITS } from "./limits.js";
+import { PUBLIC_LIMITS, HOSTED_GUARDS } from "./limits.js";
 import { createHostedLayer } from "./middleware.js";
 import { createMemoryStore } from "./quota/memory-store.js";
 import { createFirestoreStore } from "./quota/firestore-store.js";
@@ -64,6 +64,7 @@ export async function createHostedServer({ env = process.env, store, services = 
     ...services,
     allowedHosts: new RegExp(`^(${publicHost}|localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?|[a-z0-9-]+\\.[a-z0-9-]+\\.run\\.app)$`, "i"),
     documentLimits: PUBLIC_LIMITS,
+    guards: HOSTED_GUARDS,
     before,
   });
   // Document analysis and Charon can legitimately take a while; nothing may hang forever.

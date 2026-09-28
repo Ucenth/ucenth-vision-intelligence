@@ -61,6 +61,12 @@ const json = (res, status, data) => {
  * exercise the real routes with fakes and no billing. The route order is: static files,
  * health, conversation routes, document route, then the identification route below.
  */
+export const LOCAL_GUARDS = {
+  identify: { perMinute: 6, concurrent: 1 },
+  followUp: { perMinute: 12, concurrent: 1 },
+  speech: { perMinute: 18, concurrent: 1 },
+  document: { perMinute: 6, concurrent: 1 },
+};
 export function createServer({
   identify,
   followUp,
@@ -74,14 +80,19 @@ export function createServer({
   // Optional hook that runs before routing. It may answer the request itself and
   // return true, or return false to let the normal routes continue.
   before,
+  // Local guards protect the developer's own bill: one active cloud request per
+  // route and a few attempts per minute. A hosted deployment supplies larger values
+  // and its own visitor-level limits.
+  guards = LOCAL_GUARDS,
 } = {}) {
   const identifyOriginal = identify || createGeminiDetector();
-  const voiceRoutes = createVoiceRoutes({ followUp, synthesize });
+  const voiceRoutes = createVoiceRoutes({ followUp, synthesize, guards });
   const documentRoute = createDocumentRoute({
     ...(analyzeDocument ? { analyze: analyzeDocument } : {}),
     ...(documentLimits ? { limits: documentLimits } : {}),
+    guard: guards.document,
   });
-  let busy = false;
+  let active = 0;
   let requests = [];
   return http.createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
@@ -137,18 +148,18 @@ export function createServer({
     if (!/^application\/json(?:;|$)/i.test(req.headers["content-type"] || ""))
       return json(res, 415, { error: "Send a JSON image payload." });
     // Prevent overlapping billable scans; count attempts only after image validation.
-    if (busy)
+    if (active >= guards.identify.concurrent)
       return json(res, 409, {
         error: "A scan is already running. Please wait.",
       });
     requests = requests.filter((t) => Date.now() - t < 60000);
-    if (requests.length >= 6) {
+    if (requests.length >= guards.identify.perMinute) {
       res.setHeader("Retry-After", "60");
       return json(res, 429, {
         error: "Scan limit reached. Wait one minute before trying again.",
       });
     }
-    busy = true;
+    active++;
     let called = false;
     const started = Date.now();
     try {
@@ -226,7 +237,7 @@ export function createServer({
             : "Identification could not complete. Please try again shortly.",
       });
     } finally {
-      busy = false;
+      active--;
       if (called)
         console.log(
           `Identification attempt finished in ${Date.now() - started} ms.`,
