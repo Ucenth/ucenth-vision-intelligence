@@ -65,12 +65,14 @@ export const LOCAL_GUARDS = {
   identify: { perMinute: 6, concurrent: 1 },
   followUp: { perMinute: 12, concurrent: 1 },
   speech: { perMinute: 18, concurrent: 1 },
+  transcribe: { perMinute: 12, concurrent: 1 },
   document: { perMinute: 6, concurrent: 1 },
 };
 export function createServer({
   identify,
   followUp,
   synthesize,
+  transcribe,
   analyzeDocument,
   // Hosts this server answers to. The educational server is a personal local tool,
   // so only localhost is accepted; a hosted deployment passes its own pattern.
@@ -86,7 +88,7 @@ export function createServer({
   guards = LOCAL_GUARDS,
 } = {}) {
   const identifyOriginal = identify || createGeminiDetector();
-  const voiceRoutes = createVoiceRoutes({ followUp, synthesize, guards });
+  const voiceRoutes = createVoiceRoutes({ followUp, synthesize, ...(transcribe ? { transcribe } : {}), guards });
   const documentRoute = createDocumentRoute({
     ...(analyzeDocument ? { analyze: analyzeDocument } : {}),
     ...(documentLimits ? { limits: documentLimits } : {}),
@@ -131,7 +133,7 @@ export function createServer({
     }
     if (req.method === "GET" && pathname === "/api/health")
       return json(res, 200, { ok: true, provider: "Gemini 3.8 Flash vision" });
-    if (req.method === "POST" && ["/api/follow-up", "/api/speech"].includes(pathname))
+    if (req.method === "POST" && ["/api/follow-up", "/api/speech", "/api/transcribe"].includes(pathname))
       return voiceRoutes(req, res, pathname, origin);
     if (req.method === "POST" && pathname === "/api/document")
       return documentRoute(req, res, origin);

@@ -66,7 +66,7 @@ async function hosted(services, run, env = {}) {
   const { server } = await createHostedServer({
     env: { PUBLIC_ORIGIN: "http://localhost", VISITOR_COOKIE_SECRET: SECRET, QUOTA_STORE: "memory", ...env },
     store,
-    services: { identify: async () => ({ name: "Notebook", subjectType: "object" }), followUp: async () => ({ answer: "Blue.", userSuppliedIdentity: "" }), synthesize: async () => Buffer.from("RIFF"), ...services },
+    services: { identify: async () => ({ name: "Notebook", subjectType: "object" }), followUp: async () => ({ answer: "Blue.", userSuppliedIdentity: "" }), synthesize: async () => Buffer.from("RIFF"), transcribe: async () => "typed by fake", ...services },
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -117,9 +117,15 @@ test("hosted server: health, metadata, download, quota headers, exhaustion, refu
     assert.match(body.error, /^Free usage limit reached\. You can use UCENTH Vision Intelligence again in \d+h \d{2}m\.$/);
     assert.ok(body.resetAt > Date.now() + WINDOW_MS - 60000);
     assert.equal((await post("/api/follow-up", JSON.stringify({ identification: { name: "x" }, question: "?", history: [], document: { pages: [] } }))).status, 429);
-    // Speech is not an intelligence request and still works after exhaustion.
+    // Speech and clip transcription are not intelligence requests and still work after exhaustion.
     const speech = await post("/api/speech", JSON.stringify({ text: "Hello" }));
     assert.equal(speech.status, 200);
+    const clip = await fetch(`${base}/api/transcribe`, { method: "POST", headers: { "Content-Type": "audio/webm", Cookie: cookie }, body: Buffer.alloc(4000, 1) });
+    assert.equal(clip.status, 200);
+    assert.equal((await clip.json()).text, "typed by fake");
+    // A visitor who has never spent a credit gets no free transcription either.
+    const stranger = await fetch(`${base}/api/transcribe`, { method: "POST", headers: { "Content-Type": "audio/webm" }, body: Buffer.alloc(4000, 1) });
+    assert.equal(stranger.status, 429);
     // A fresh visitor (no cookie) has a full allowance: quota is per visitor, not per address.
     const other = await fetch(`${base}/api/identify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: identifyBody() });
     assert.equal(other.status, 200);

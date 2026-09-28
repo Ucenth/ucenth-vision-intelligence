@@ -3,7 +3,7 @@
  * This module turns a finished identification into a spoken conversation:
  *
  *   result presented → Charon speaks an introduction → LISTENING
- *     → USER_SPEAKING (Chrome speech recognition transcribes)
+ *     → USER_SPEAKING (speech is transcribed)
  *     → THINKING (question + context → our server → Gemini)
  *     → Charon audio is prepared → answer text revealed + VISION_SPEAKING
  *     → playback ends → echo guard → LISTENING again
@@ -17,21 +17,39 @@
  *   - A listening period ends after five seconds without speech. Microphones should
  *     not stay open indefinitely: it wastes resources and surprises users.
  *
- * Honest note on privacy: Chrome's SpeechRecognition may send microphone audio to
- * Google's speech service. It is not local. Charon (Cloud Text-to-Speech) runs
- * server-side through our /api/speech route; the browser only receives WAV audio. */
+ * Two transcription paths give one experience:
+ *   native  the browser's SpeechRecognition (Chrome desktop and Android, Safari).
+ *           On phones the recogniser must own the microphone alone: holding a second
+ *           getUserMedia stream for the particle analyser starves recognition on
+ *           Android and breaks it on iOS, so mobile listening opens no stream and the
+ *           particles use a restrained listening pulse driven by recognition events.
+ *   server  where native recognition is missing or fails (iOS Chrome, some Safari
+ *           sessions): the browser records the question with MediaRecorder, sends the
+ *           clip to /api/transcribe, and the server transcribes it in memory. Nothing
+ *           is stored. Here the microphone stream is ours, so the particles can follow it.
+ * The user sees the same LISTENING → USER SPEAKING → THINKING → VISION SPEAKING loop.
+ *
+ * Honest note on privacy: native recognition may send microphone audio to the
+ * browser vendor's speech service; the server path sends a short clip to our server
+ * and Google for transcription only. Charon (Cloud Text-to-Speech) runs server-side
+ * through /api/speech; the browser only receives WAV audio. */
 import { createParticlePresence } from "./lib/particle-presence.js";
 
-// The echo guard was validated in a physical speaker/microphone acceptance test.
 // After playback ends, wait a little before listening again so the room's echo of
-// Charon's last word is not transcribed as the user's next question.
+// Charon's last word is not transcribed as the user's next question. The guard was
+// validated in a physical speaker/microphone acceptance test.
 export const ECHO_GUARD_MS = 900;
 // Speech-START timeout: how long LISTENING waits for a person to begin speaking. It is
 // not a maximum utterance length; once speech starts the timer is cancelled.
 export const SPEECH_START_TIMEOUT_MS = 5000;
-// The recognizer's onspeechstart fires on brief noises too. Requiring speech to persist
+// The recogniser's onspeechstart fires on brief noises too. Requiring speech to persist
 // for 200 ms (or a transcript to arrive) filters clicks and coughs.
 const SPEECH_DEBOUNCE_MS = 200;
+// Server path: end the clip after this much silence following speech, and never
+// record longer than MAX_CLIP_MS.
+const SILENCE_END_MS = 900;
+const MAX_CLIP_MS = 15000;
+
 const $ = (id) => document.getElementById(id);
 const readVoice = () => {
   try {
@@ -46,6 +64,44 @@ let voiceEnabled = readVoice(),
   serial = 0,
   audioUnlock;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Platform facts used for decisions and reported to the diagnostics panel. */
+export function capabilities() {
+  const ua = navigator.userAgent || "";
+  const ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(ua);
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  return {
+    userAgent: ua,
+    platform: navigator.platform,
+    ios,
+    android,
+    mobile: ios || android,
+    speechRecognition: !!window.SpeechRecognition,
+    webkitSpeechRecognition: !!window.webkitSpeechRecognition,
+    getUserMedia: !!navigator.mediaDevices?.getUserMedia,
+    mediaRecorder: typeof MediaRecorder !== "undefined",
+    recorderMime: recorderMime(),
+    audioContext: !!(window.AudioContext || window.webkitAudioContext),
+    audioContextState: audioContext?.state || "none",
+    // iOS Chrome and Firefox have no native recogniser at all; everything else tries
+    // native first and falls back per session if it fails.
+    nativeRecognition: !!Recognition,
+    preferredPath: Recognition ? "native" : "server",
+  };
+}
+function recorderMime() {
+  if (typeof MediaRecorder === "undefined") return "";
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((m) => MediaRecorder.isTypeSupported?.(m)) || "";
+}
+/** Structured diagnostics (never audio) for the staging diagnostics panel and tests. */
+function diag(event, data = {}) {
+  document.dispatchEvent(new CustomEvent("ucenth:voice-diag", { detail: { t: Math.round(performance.now()), event, ...data } }));
+}
+/** Pipeline timing marks, consumed by the diagnostics timeline. */
+function mark(name, data = {}) {
+  document.dispatchEvent(new CustomEvent("ucenth:timing", { detail: { t: Math.round(performance.now()), name, ...data } }));
+}
 /**
  * Browsers block audio output until the page has had a user gesture. Creating and
  * resuming the AudioContext inside the first click (camera, upload or reset) unlocks
@@ -58,8 +114,7 @@ function unlock() {
     audioUnlock.catch(() => {});
   } catch {}
 }
-for (const id of ["start", "upload", "reset"])
-  $(id)?.addEventListener("click", unlock, true);
+for (const id of ["start", "upload", "reset"]) $(id)?.addEventListener("click", unlock, true);
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -70,7 +125,7 @@ function element(tag, className, text) {
 /**
  * Builds the conversation panel with plain DOM calls. Everything user- or model-
  * generated is set through textContent, so transcripts and answers are never parsed
- * as HTML. The panel is created per identification and removed on reset.
+ * as HTML. One primary control changes with the state; typing is always available.
  */
 function buildPanel() {
   const panel = element("section", "voice-panel");
@@ -87,11 +142,12 @@ function buildPanel() {
     answer = element("p", "voice-answer");
   answer.setAttribute("aria-live", "polite");
   const controls = element("div", "voice-controls"),
-    mic = element("button", "voice-button", "Start listening"),
-    mute = element("button", "voice-button", "Voice on"),
-    end = element("button", "voice-button", "End conversation");
-  for (const b of [mic, mute, end]) b.type = "button";
-  controls.append(mic, mute, end);
+    primary = element("button", "voice-primary", "Pause"),
+    mute = element("button", "voice-text", "Turn voice off"),
+    end = element("button", "voice-text", "End");
+  for (const b of [primary, mute, end]) b.type = "button";
+  end.setAttribute("aria-label", "End conversation");
+  controls.append(primary, mute, end);
   const typed = element("details", "voice-typed"),
     summary = element("summary", "", "Type a question"),
     form = element("form", "voice-form"),
@@ -104,41 +160,11 @@ function buildPanel() {
   send.type = "submit";
   form.append(input, send);
   typed.append(summary, form);
-  const notice = element(
-    "p",
-    "voice-notice",
-    "Voice uses Google Cloud. Browser speech recognition may send microphone audio to its provider. No microphone recording is saved by UCENTH Vision Intelligence.",
-  );
+  const notice = element("p", "voice-notice", "");
   notice.setAttribute("role", "status");
-  panel.append(
-    stage,
-    heading,
-    question,
-    interim,
-    answer,
-    controls,
-    typed,
-    notice,
-  );
+  panel.append(stage, heading, question, interim, answer, controls, typed, notice);
   $("results").after(panel);
-  return {
-    panel,
-    stage,
-    field,
-    label,
-    heading,
-    question,
-    interim,
-    answer,
-    mic,
-    mute,
-    end,
-    typed,
-    form,
-    input,
-    send,
-    notice,
-  };
+  return { panel, stage, field, label, heading, question, interim, answer, primary, mute, end, typed, form, input, send, notice };
 }
 /**
  * The race-condition guard. "current" is the active conversation and c.turn increases
@@ -148,66 +174,84 @@ function buildPanel() {
 function valid(c, turn = c.turn) {
   return current === c && !c.ended && turn === c.turn;
 }
+const LABELS = {
+  CONVERSATION_PAUSED: "Conversation paused",
+  MICROPHONE_PAUSED: "Conversation paused",
+  VOICE_OFF: "Voice off",
+  VOICE_UNAVAILABLE: "Voice unavailable",
+  FOLLOW_UP_UNAVAILABLE: "FOLLOW UP UNAVAILABLE",
+  CONVERSATION_ENDED: "Conversation ended",
+  OPENING_MICROPHONE: "OPENING MICROPHONE",
+  USER_SPEAKING: "USER SPEAKING",
+  VISION_SPEAKING: "VISION SPEAKING",
+};
+// The single primary control per state. States not listed show no primary control.
+const PRIMARY = {
+  LISTENING: "Pause",
+  USER_SPEAKING: "Pause",
+  OPENING_MICROPHONE: "Pause",
+  CONVERSATION_PAUSED: "Continue",
+  MICROPHONE_PAUSED: "Continue",
+  VOICE_OFF: "Enable voice",
+  VOICE_UNAVAILABLE: "Try voice again",
+  VISION_SPEAKING: "Stop speaking",
+  CONVERSATION_ENDED: "Resume",
+  FOLLOW_UP_UNAVAILABLE: "Continue",
+};
 /**
- * The only function that changes conversation state. It updates the label, the button
- * text, the particle renderer's mode and dispatches "ucenth:voice-state" (used by tests
- * and available to any page script). Keeping this in one place makes the state machine
- * easy to reason about and impossible to update half-way.
+ * The only function that changes conversation state. It updates the label, the
+ * controls, the particle renderer's mode and dispatches "ucenth:voice-state" (used by
+ * tests and available to any page script). One place, one source of truth.
  */
 function state(c, value) {
   if (current !== c || c.state === value) return;
   c.state = value;
-  c.particles?.setState(value === "CONVERSATION_PAUSED" ? "IDLE" : value);
-  c.ui.label.textContent =
-    value === "CONVERSATION_PAUSED"
-      ? "Conversation paused"
-      : value.replaceAll("_", " ");
+  c.particles?.setState(value);
+  c.ui.label.textContent = LABELS[value] || value.replaceAll("_", " ");
   c.ui.panel.dataset.state = value;
-  c.ui.mic.textContent =
-    value === "CONVERSATION_PAUSED"
-      ? "Continue conversation"
-      : ["LISTENING", "USER_SPEAKING"].includes(value)
-        ? "Pause microphone"
-        : "Start listening";
-  c.ui.mic.disabled = value === "OPENING_MICROPHONE";
-  c.ui.mic.setAttribute(
-    "aria-pressed",
-    String(["LISTENING", "USER_SPEAKING"].includes(value)),
-  );
-  c.ui.panel.dispatchEvent(
-    new CustomEvent("ucenth:voice-state", {
-      bubbles: true,
-      detail: { state: value },
-    }),
-  );
+  const primary = PRIMARY[value];
+  c.ui.primary.hidden = !primary;
+  if (primary) c.ui.primary.textContent = primary;
+  c.ui.primary.setAttribute("aria-pressed", String(["LISTENING", "USER_SPEAKING", "OPENING_MICROPHONE"].includes(value)));
+  c.ui.mute.hidden = !voiceEnabled || value === "VOICE_OFF";
+  c.ui.end.hidden = value === "CONVERSATION_ENDED";
+  // Typing is the fallback whenever listening is not active.
+  if (["CONVERSATION_PAUSED", "MICROPHONE_PAUSED", "VOICE_OFF", "VOICE_UNAVAILABLE", "FOLLOW_UP_UNAVAILABLE", "CONVERSATION_ENDED"].includes(value)) c.ui.typed.open = true;
+  if (["LISTENING", "USER_SPEAKING"].includes(value) && voiceEnabled) c.ui.typed.open = false;
+  diag("state", { state: value });
+  c.ui.panel.dispatchEvent(new CustomEvent("ucenth:voice-state", { bubbles: true, detail: { state: value } }));
 }
 function clearSpeechTimer(c) {
   clearTimeout(c.speechTimer);
   clearTimeout(c.speechDebounce);
-  c.speechTimer = null;
-  c.speechDebounce = null;
+  clearTimeout(c.silenceTimer);
+  clearTimeout(c.clipTimer);
+  c.speechTimer = c.speechDebounce = c.silenceTimer = c.clipTimer = null;
 }
 /**
- * Releases everything related to listening: pending timers, the recognizer (handlers
+ * Releases everything related to listening: pending timers, the recogniser (handlers
  * are detached before abort() so its final events cannot fire back into the state
- * machine), the microphone tracks and the analyser feeding the particles. Stopping the
- * tracks is what turns the browser's microphone indicator off.
+ * machine), the recorder, the microphone tracks and the analyser feeding the
+ * particles. Stopping the tracks is what turns the browser's microphone indicator off.
  */
 function stopMic(c) {
   clearSpeechTimer(c);
   c.listeningAttempt = null;
-  clearTimeout(c.restart);
-  c.restart = null;
   const recognition = c.recognition;
   c.recognition = null;
   if (recognition) {
-    recognition.onend = null;
-    recognition.onresult = null;
-    recognition.onerror = null;
-    recognition.onspeechstart = null;
-    recognition.onspeechend = null;
+    for (const h of ["onend", "onresult", "onerror", "onspeechstart", "onspeechend", "onaudiostart", "onaudioend", "onsoundstart", "onsoundend", "onstart"]) recognition[h] = null;
     try {
       recognition.abort();
+    } catch {}
+  }
+  if (c.recorder) {
+    const recorder = c.recorder;
+    c.recorder = null;
+    recorder.ondataavailable = null;
+    recorder.onstop = null;
+    try {
+      if (recorder.state !== "inactive") recorder.stop();
     } catch {}
   }
   c.stream?.getTracks().forEach((t) => t.stop());
@@ -220,14 +264,13 @@ function stopMic(c) {
 }
 /**
  * Five seconds passed without genuine speech: stop listening and wait for the user to
- * choose Continue conversation. Listening deliberately does not restart on its own.
+ * choose Continue. Listening deliberately does not restart on its own.
  */
-function pauseConversation(c) {
+function pauseConversation(c, reason = "speech-start-timeout") {
+  diag("pause", { reason });
   c.autoListen = false;
   stopMic(c);
   state(c, "CONVERSATION_PAUSED");
-  c.ui.notice.textContent =
-    "No speech detected. Continue conversation when you’re ready, or type a question.";
 }
 /**
  * Invalidates the turn in progress: aborts the follow-up request, stops any Charon
@@ -267,77 +310,40 @@ function activate(c) {
     const details = element("details", "voice-identification-details"),
       summary = element("summary", "", "Identification details");
     details.append(summary);
-    const nodes = [...$("results").children];
-    for (const node of nodes)
-      if (
-        !node.matches(
-          ".result-state,.identity-name,.identity-meta,.keep-visible",
-        )
-      )
-        details.append(node);
+    for (const node of [...$("results").children])
+      if (!node.matches(".result-state,.identity-name,.identity-meta,.keep-visible")) details.append(node);
     if (details.children.length > 1) $("results").append(details);
   }
   c.particles = createParticlePresence(c.ui.field, {
     onActivity: (speaking) => {
-      if (c.stream && ["LISTENING", "USER_SPEAKING"].includes(c.state))
-        state(c, speaking ? "USER_SPEAKING" : "LISTENING");
+      // Only the server path owns a microphone stream; native recognition reports speech itself.
+      if (c.stream && c.sttPath === "server" && ["LISTENING", "USER_SPEAKING"].includes(c.state)) state(c, speaking ? "USER_SPEAKING" : "LISTENING");
     },
-    onMetrics: (metrics) =>
-      c.ui.panel.dispatchEvent(
-        new CustomEvent("ucenth:particles-metrics", {
-          bubbles: true,
-          detail: metrics,
-        }),
-      ),
-    onFallback: () => {
-      c.ui.notice.textContent =
-        "A simpler live-audio particle view is active. Voice remains available.";
-    },
+    onMetrics: (metrics) => c.ui.panel.dispatchEvent(new CustomEvent("ucenth:particles-metrics", { bubbles: true, detail: metrics })),
+    onFallback: () => diag("particles", { fallback: true }),
   });
 }
 function setVoiceControls(c) {
-  c.ui.mute.textContent = voiceEnabled ? "Voice on" : "Voice off";
-  c.ui.mute.setAttribute("aria-pressed", String(voiceEnabled));
-  c.ui.mute.setAttribute(
-    "aria-label",
-    voiceEnabled ? "Turn voice responses off" : "Turn voice responses on",
-  );
-  if (!voiceEnabled) c.ui.typed.open = true;
+  c.ui.mute.textContent = "Turn voice off";
+  c.ui.mute.hidden = !voiceEnabled;
+}
+function voiceUnavailable(c, message) {
+  c.autoListen = false;
+  stopMic(c);
+  state(c, "VOICE_UNAVAILABLE");
+  c.ui.notice.textContent = message;
 }
 /**
- * Opens one listening period. Order matters:
- *   1. resume the AudioContext (user gesture already happened),
- *   2. getUserMedia() for the microphone → AnalyserNode → particles (audio-reactive,
- *      not connected to the speakers, so no feedback),
- *   3. start Chrome's continuous SpeechRecognition with interim results,
- *   4. arm the five-second speech-start timer.
- *
- * Speech is confirmed by the recognizer's own classifier (onspeechstart held for
- * 200 ms) or by any transcript, never by raw microphone volume: a loud room should not
- * look like a question. A final transcript submits the question; recognition ending
- * without one pauses the conversation. Permission or recognizer errors switch to the
- * typed fallback rather than retrying silently.
+ * Opens one listening period, choosing the transcription path for this session:
+ * native SpeechRecognition where it exists (and has not failed this session), otherwise
+ * recording plus server transcription. Both arm the five-second speech-start timer.
  */
 async function listen(c) {
-  if (
-    !valid(c) ||
-    !voiceEnabled ||
-    !c.autoListen ||
-    document.hidden ||
-    c.listeningAttempt ||
-    c.recognition
-  )
-    return;
-  const Recognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    c.autoListen = false;
-    state(c, "VOICE_UNAVAILABLE");
-    c.ui.notice.textContent =
-      "Speech recognition is unavailable in this browser. Type your question below.";
-    c.ui.typed.open = true;
-    return;
-  }
+  if (!valid(c) || !voiceEnabled || !c.autoListen || document.hidden || c.listeningAttempt || c.recognition || c.recorder) return;
+  const caps = capabilities();
+  if (!c.sttPath) c.sttPath = caps.nativeRecognition ? "native" : caps.mediaRecorder && caps.getUserMedia ? "server" : "none";
+  diag("listen", { path: c.sttPath, mobile: caps.mobile });
+  if (c.sttPath === "none") return voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
   stopMic(c);
   const turn = c.turn,
     attempt = {};
@@ -347,113 +353,236 @@ async function listen(c) {
     unlock();
     await audioUnlock;
     if (!valid(c, turn) || c.listeningAttempt !== attempt) return;
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
-    });
-    if (
-      !valid(c, turn) ||
-      c.listeningAttempt !== attempt ||
-      !c.autoListen ||
-      document.hidden
-    ) {
+    if (c.sttPath === "native") await listenNative(c, turn, attempt, caps);
+    else await listenServer(c, turn, attempt, caps);
+  } catch (error) {
+    if (!valid(c, turn)) return;
+    diag("error", { where: "listen", name: error?.name, message: String(error?.message || error).slice(0, 120) });
+    voiceUnavailable(c, error?.name === "NotAllowedError" ? "Microphone access was denied. You can continue by typing." : "Voice couldn't start on this device. You can continue by typing.");
+  }
+}
+/**
+ * Native path. Order matters:
+ *   1. on desktop only, getUserMedia() → AnalyserNode → particles (audio-reactive,
+ *      not connected to the speakers, so no feedback); phones skip this so the
+ *      recogniser owns the microphone alone,
+ *   2. start continuous SpeechRecognition with interim results,
+ *   3. arm the five-second speech-start timer.
+ * Speech is confirmed by the recogniser's own classifier (onspeechstart held for
+ * 200 ms) or by any transcript, never by raw microphone volume. A final transcript
+ * submits the question; recognition ending without one pauses the conversation. An
+ * error switches this session to the server path (or to typing if that is impossible).
+ */
+async function listenNative(c, turn, attempt, caps) {
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!caps.mobile && caps.getUserMedia) {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    if (!valid(c, turn) || c.listeningAttempt !== attempt || !c.autoListen || document.hidden) {
       stream.getTracks().forEach((t) => t.stop());
       return;
     }
-    c.stream = stream;
-    c.micAnalyser = audioContext.createAnalyser();
-    c.micAnalyser.fftSize = 2048;
-    c.micAnalyser.smoothingTimeConstant = 0.65;
-    c.micSource = audioContext.createMediaStreamSource(stream);
-    c.micSource.connect(c.micAnalyser);
-    c.particles?.connect(c.micAnalyser, "microphone");
-    // how-to:start speech-recognition
-    const recognition = new Recognition();
-    c.recognition = recognition;
-    recognition.lang = "en-US";
-    recognition.interimResults = true;
-    recognition.continuous = true;
-    // how-to:end speech-recognition
-    let speechStarted = false,
-      candidateAt = null;
-    const live = () => valid(c, turn) && c.recognition === recognition;
-    const confirmSpeech = () => {
-      if (!live()) return;
-      speechStarted = true;
-      clearSpeechTimer(c);
-      state(c, "USER_SPEAKING");
-    };
-    // Use the recognizer's speech classifier, not raw volume spikes from the renderer.
-    // A short speech-end cancels the candidate; a transcript is stronger evidence.
-    recognition.onspeechstart = () => {
-      if (!live() || speechStarted || candidateAt !== null) return;
-      candidateAt = performance.now();
-      c.speechDebounce = setTimeout(confirmSpeech, SPEECH_DEBOUNCE_MS);
-    };
-    recognition.onspeechend = () => {
-      if (speechStarted) return;
-      clearTimeout(c.speechDebounce);
-      c.speechDebounce = null;
-      candidateAt = null;
-    };
-    recognition.onresult = (event) => {
-      if (!live() || !["LISTENING", "USER_SPEAKING"].includes(c.state)) return;
-      let final = "",
-        interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += text;
-        else interim += text;
-      }
-      if ((final + interim).trim()) confirmSpeech();
-      c.ui.interim.textContent = interim;
-      if (final.trim()) ask(c, final.trim());
-    };
-    recognition.onerror = (event) => {
-      if (c.recognition !== recognition || !valid(c, turn)) return;
-      if (event.error === "no-speech") return;
-      c.autoListen = false;
-      stopMic(c);
-      state(c, "VOICE_UNAVAILABLE");
-      c.ui.notice.textContent =
-        event.error === "not-allowed"
-          ? "Microphone access was denied. Type a question or use Start listening to try permission again."
-          : "Speech recognition could not continue. Type a question or use Start listening to retry.";
-      c.ui.typed.open = true;
-    };
-    recognition.onend = () => {
-      if (live()) pauseConversation(c);
-    };
-    recognition.start();
-    state(c, "LISTENING");
-    c.speechTimer = setTimeout(() => {
-      if (!live() || speechStarted) return;
-      // Permit only the remainder of one near-deadline debounce, never a renewed window.
-      const remaining =
-        candidateAt === null
-          ? 0
-          : Math.max(0, SPEECH_DEBOUNCE_MS - (performance.now() - candidateAt));
-      if (remaining)
-        c.speechTimer = setTimeout(() => {
-          if (live() && !speechStarted) pauseConversation(c);
-        }, remaining + 10);
-      else pauseConversation(c);
-    }, SPEECH_START_TIMEOUT_MS);
-    c.ui.notice.textContent =
-      "Microphone active · Begin speaking within five seconds. Browser speech recognition may process audio remotely.";
-  } catch {
-    if (!valid(c, turn)) return;
-    c.autoListen = false;
-    stopMic(c);
-    state(c, "VOICE_UNAVAILABLE");
-    c.ui.notice.textContent =
-      "Microphone access is unavailable or was denied. You can continue by typing.";
-    c.ui.typed.open = true;
+    attachStream(c, stream);
   }
+  // how-to:start speech-recognition
+  const recognition = new Recognition();
+  c.recognition = recognition;
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  // how-to:end speech-recognition
+  let speechStarted = false,
+    candidateAt = null,
+    sawAudio = false;
+  const live = () => valid(c, turn) && c.recognition === recognition;
+  const confirmSpeech = () => {
+    if (!live()) return;
+    speechStarted = true;
+    clearSpeechTimer(c);
+    state(c, "USER_SPEAKING");
+    c.particles?.pulse(0.6);
+  };
+  for (const name of ["start", "audiostart", "soundstart", "soundend", "audioend"])
+    recognition[`on${name}`] = () => {
+      if (name === "audiostart") sawAudio = true;
+      diag(`recognition.${name}`);
+    };
+  // Use the recogniser's speech classifier, not raw volume spikes from the renderer.
+  // A short speech-end cancels the candidate; a transcript is stronger evidence.
+  recognition.onspeechstart = () => {
+    diag("recognition.speechstart");
+    if (!live() || speechStarted || candidateAt !== null) return;
+    candidateAt = performance.now();
+    c.speechDebounce = setTimeout(confirmSpeech, SPEECH_DEBOUNCE_MS);
+  };
+  recognition.onspeechend = () => {
+    diag("recognition.speechend");
+    if (speechStarted) return;
+    clearTimeout(c.speechDebounce);
+    c.speechDebounce = null;
+    candidateAt = null;
+  };
+  recognition.onresult = (event) => {
+    if (!live() || !["LISTENING", "USER_SPEAKING"].includes(c.state)) return;
+    let final = "",
+      interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const text = event.results[i][0].transcript;
+      if (event.results[i].isFinal) final += text;
+      else interim += text;
+    }
+    diag("recognition.result", { interimChars: interim.length, finalChars: final.length });
+    if ((final + interim).trim()) confirmSpeech();
+    c.ui.interim.textContent = interim;
+    c.particles?.pulse(0.5);
+    if (final.trim()) {
+      mark("speech-final");
+      ask(c, final.trim());
+    }
+  };
+  recognition.onerror = (event) => {
+    if (c.recognition !== recognition || !valid(c, turn)) return;
+    diag("recognition.error", { error: event.error, sawAudio });
+    if (event.error === "no-speech") return;
+    if (event.error === "not-allowed" || event.error === "service-not-allowed")
+      return voiceUnavailable(c, event.error === "not-allowed" ? "Microphone access was denied. You can continue by typing." : "Voice couldn't start on this device. You can continue by typing.");
+    // Anything else (audio-capture, network, aborted by the platform): switch this
+    // session to the server path once, then keep listening.
+    if (caps.mediaRecorder && caps.getUserMedia && !c.fellBack) {
+      c.fellBack = true;
+      c.sttPath = "server";
+      diag("fallback", { to: "server", because: event.error });
+      stopMic(c);
+      c.listeningAttempt = null;
+      listen(c);
+      return;
+    }
+    voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
+  };
+  recognition.onend = () => {
+    diag("recognition.end", { speechStarted, sawAudio });
+    if (live()) pauseConversation(c, speechStarted ? "recognition-ended" : "no-speech");
+  };
+  recognition.start();
+  mark("listening");
+  state(c, "LISTENING");
+  armSpeechStartTimer(c, turn, () => speechStarted, () => candidateAt);
+}
+/**
+ * Server path: record a short clip and transcribe it on the server. The microphone
+ * stream is ours here, so the particles follow the real signal, and speech is
+ * detected from the analyser with a noise gate measured in the first 400 ms.
+ */
+async function listenServer(c, turn, attempt, caps) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+  if (!valid(c, turn) || c.listeningAttempt !== attempt || !c.autoListen || document.hidden) {
+    stream.getTracks().forEach((t) => t.stop());
+    return;
+  }
+  attachStream(c, stream);
+  const mime = caps.recorderMime;
+  const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  c.recorder = recorder;
+  const chunks = [];
+  let speechStarted = false,
+    stopped = false;
+  const live = () => valid(c, turn) && c.recorder === recorder;
+  recorder.ondataavailable = (e) => {
+    if (e.data && e.data.size) chunks.push(e.data);
+  };
+  recorder.onstop = async () => {
+    if (!live() && !stopped) return;
+    const blob = new Blob(chunks, { type: recorder.mimeType || mime || "audio/webm" });
+    diag("clip", { bytes: blob.size, type: blob.type, speechStarted });
+    stopMic(c);
+    if (!valid(c, turn) || !speechStarted || blob.size < 1000) return pauseConversation(c, speechStarted ? "empty-clip" : "no-speech");
+    c.ui.interim.textContent = "…";
+    mark("transcribe-start", { bytes: blob.size });
+    try {
+      const response = await fetch("/api/transcribe", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+      const result = await response.json();
+      if (!valid(c, turn)) return;
+      mark("transcribe-done", { chars: (result.text || "").length });
+      c.ui.interim.textContent = "";
+      if (!response.ok) throw Error("transcribe");
+      if (result.text?.trim()) {
+        mark("speech-final");
+        ask(c, result.text.trim());
+      } else pauseConversation(c, "empty-transcript");
+    } catch (error) {
+      if (!valid(c, turn)) return;
+      diag("error", { where: "transcribe", message: String(error?.message || error).slice(0, 120) });
+      c.ui.interim.textContent = "";
+      pauseConversation(c, "transcribe-failed");
+    }
+  };
+  // Speech detection from the analyser: quiet room → noise floor, then a clear rise.
+  const analyser = c.micAnalyser,
+    data = new Float32Array(analyser.fftSize);
+  let noise = 0.002,
+    started = performance.now(),
+    lastLoud = 0;
+  const poll = () => {
+    if (!live() || stopped) return;
+    analyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const rms = Math.sqrt(sum / data.length),
+      now = performance.now();
+    if (now - started < 400) noise = Math.min(0.01, noise * 0.9 + rms * 0.1);
+    else if (rms > Math.max(0.012, noise * 3)) {
+      lastLoud = now;
+      if (!speechStarted) {
+        speechStarted = true;
+        clearSpeechTimer(c);
+        diag("recorder.speechstart", { rms: +rms.toFixed(4), noise: +noise.toFixed(4) });
+        state(c, "USER_SPEAKING");
+        c.clipTimer = setTimeout(() => finish("max-clip"), MAX_CLIP_MS);
+      }
+    } else if (speechStarted && now - lastLoud > SILENCE_END_MS) return finish("silence");
+    c.pollFrame = requestAnimationFrame(poll);
+  };
+  const finish = (why) => {
+    if (stopped) return;
+    stopped = true;
+    cancelAnimationFrame(c.pollFrame);
+    diag("recorder.stop", { why });
+    try {
+      recorder.stop();
+    } catch {
+      pauseConversation(c, "recorder-failed");
+    }
+  };
+  recorder.start(250);
+  mark("listening");
+  state(c, "LISTENING");
+  poll();
+  armSpeechStartTimer(c, turn, () => speechStarted, () => null, () => finish("speech-start-timeout"));
+}
+function attachStream(c, stream) {
+  c.stream = stream;
+  const tracks = stream.getAudioTracks();
+  diag("microphone", { tracks: tracks.length, readyState: tracks[0]?.readyState, enabled: tracks[0]?.enabled, muted: tracks[0]?.muted, label: tracks[0]?.label ? "present" : "none" });
+  c.micAnalyser = audioContext.createAnalyser();
+  c.micAnalyser.fftSize = 2048;
+  c.micAnalyser.smoothingTimeConstant = 0.65;
+  c.micSource = audioContext.createMediaStreamSource(stream);
+  c.micSource.connect(c.micAnalyser);
+  c.particles?.connect(c.micAnalyser, "microphone");
+}
+function armSpeechStartTimer(c, turn, started, candidate, onTimeout) {
+  c.speechTimer = setTimeout(() => {
+    if (!valid(c, turn) || started()) return;
+    // Permit only the remainder of one near-deadline debounce, never a renewed window.
+    const at = candidate();
+    const remaining = at === null ? 0 : Math.max(0, SPEECH_DEBOUNCE_MS - (performance.now() - at));
+    const fire = () => {
+      if (!valid(c, turn) || started()) return;
+      if (onTimeout) onTimeout();
+      else pauseConversation(c, "speech-start-timeout");
+    };
+    if (remaining) c.speechTimer = setTimeout(fire, remaining + 10);
+    else fire();
+  }, SPEECH_START_TIMEOUT_MS);
 }
 /**
  * Playback finished. Wait the echo guard, then listen again if the loop is still on.
@@ -461,13 +590,11 @@ async function listen(c) {
 function returnToListening(c, turn) {
   if (!valid(c, turn)) return;
   state(c, "IDLE");
-  if (c.autoListen && voiceEnabled) {
-    c.ui.notice.textContent = "Preparing to listen…";
+  if (c.autoListen && voiceEnabled)
     c.guard = setTimeout(() => {
       c.guard = null;
       if (valid(c, turn)) listen(c);
     }, ECHO_GUARD_MS);
-  }
 }
 /**
  * Speaks text with Charon, revealing the written answer only when audio is ready.
@@ -487,21 +614,16 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
   const request = new AbortController();
   c.request = request;
   let timeout;
+  mark("charon-request", { chars: text.length });
   try {
     const ready = async () => {
-      const response = await fetch("/api/speech", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: request.signal,
-      });
+      const response = await fetch("/api/speech", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal: request.signal });
       if (!response.ok) throw Error("Voice unavailable");
       const bytes = await response.arrayBuffer();
       if (!valid(c, turn)) throw Error("Stale voice");
       unlock();
       await audioUnlock;
-      if (!audioContext || audioContext.state !== "running")
-        throw Error("Audio unavailable");
+      if (!audioContext || audioContext.state !== "running") throw Error("Audio unavailable");
       return audioContext.decodeAudioData(bytes);
     };
     const audio = await Promise.race([
@@ -514,6 +636,7 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
       }),
     ]);
     clearTimeout(timeout);
+    mark("charon-ready", { seconds: +audio.duration.toFixed(2) });
     await chimeReady;
     if (!valid(c, turn) || !voiceEnabled) return;
     // how-to:start charon-playback
@@ -534,24 +657,22 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
       c.outputAnalyser?.disconnect();
       c.outputAnalyser = null;
       c.particles.disconnect();
+      mark("playback-end");
       returnToListening(c, turn);
     };
     c.ui.answer.textContent = text;
     c.pendingAnswer = null;
     state(c, "VISION_SPEAKING");
-    c.ui.notice.textContent =
-      "Charon speaking · Microphone and speech recognition are stopped.";
     c.playback.start();
+    mark("playback-start");
     // how-to:end charon-playback
   } catch (error) {
     if (!valid(c, turn)) return;
+    diag("error", { where: "speak", message: String(error?.message || error).slice(0, 120), audioContext: audioContext?.state });
     c.ui.answer.textContent = text;
     c.pendingAnswer = null;
     activate(c);
-    state(c, "VOICE_UNAVAILABLE");
-    c.ui.notice.textContent =
-      "Voice unavailable. Continue with the written answer or type another question.";
-    c.ui.typed.open = true;
+    voiceUnavailable(c, "Voice couldn't play on this device. The written answer is here, and you can continue by typing.");
   } finally {
     clearTimeout(timeout);
     if (c.request === request) c.request = null;
@@ -577,63 +698,41 @@ async function ask(c, question) {
   c.ui.answer.textContent = "";
   c.ui.input.value = "";
   state(c, "THINKING");
-  c.ui.notice.textContent =
-    "Considering your question about this captured object…";
+  c.ui.notice.textContent = "";
   c.autoListen = voiceEnabled;
   c.pendingAnswer = null;
   const request = new AbortController();
   c.request = request;
   const timeout = setTimeout(() => request.abort(), 30000);
+  mark("follow-up-request");
   try {
     const response = await fetch("/api/follow-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image: c.image || undefined,
-        document: c.document || undefined,
-        identification: c.identification,
-        question,
-        history: c.history.slice(-6),
-      }),
+      body: JSON.stringify({ image: c.image || undefined, document: c.document || undefined, identification: c.identification, question, history: c.history.slice(-6) }),
       signal: c.request.signal,
     });
     const result = await response.json();
     if (!valid(c, turn)) return;
-    if (!response.ok || typeof result.answer !== "string")
-      throw Error("Follow-up unavailable");
+    mark("follow-up-response", { serverMs: result.elapsedMs });
+    if (!response.ok || typeof result.answer !== "string") throw Error("Follow-up unavailable");
     c.pendingAnswer = result.answer;
-    c.history.push(
-      { role: "user", text: question },
-      { role: "assistant", text: result.answer },
-    );
+    c.history.push({ role: "user", text: question }, { role: "assistant", text: result.answer });
     c.history = c.history.slice(-6);
     // A name the user states for an unidentified person becomes user-provided context, never verified identity.
-    if (
-      typeof result.userSuppliedIdentity === "string" &&
-      result.userSuppliedIdentity.trim() &&
-      c.identification?.subjectType === "person" &&
-      !c.identification.identityEstablished
-    )
-      c.identification = {
-        ...c.identification,
-        identityName: result.userSuppliedIdentity.trim().slice(0, 120),
-        identitySource: "user_context",
-      };
-    if (voiceEnabled) {
-      speak(c, result.answer, turn);
-    } else {
+    if (typeof result.userSuppliedIdentity === "string" && result.userSuppliedIdentity.trim() && c.identification?.subjectType === "person" && !c.identification.identityEstablished)
+      c.identification = { ...c.identification, identityName: result.userSuppliedIdentity.trim().slice(0, 120), identitySource: "user_context" };
+    if (voiceEnabled) speak(c, result.answer, turn);
+    else {
       c.ui.answer.textContent = result.answer;
       c.pendingAnswer = null;
       state(c, "VOICE_OFF");
-      c.ui.notice.textContent = "Voice is off. Continue by typing.";
     }
   } catch (error) {
     if (!valid(c, turn)) return;
     state(c, "FOLLOW_UP_UNAVAILABLE");
-    c.ui.notice.textContent =
-      "The follow-up could not complete. Your captured object is preserved. Please retry your question.";
+    c.ui.notice.textContent = "The answer couldn't be completed. Your captured object is preserved; please ask again.";
     c.ui.input.value = question;
-    c.ui.typed.open = true;
   } finally {
     clearTimeout(timeout);
     if (c.request === request) c.request = null;
@@ -654,17 +753,11 @@ function end(c) {
   c.ui.panel.classList.remove("active");
   c.ui.panel.classList.add("ended");
   state(c, "CONVERSATION_ENDED");
-  c.ui.end.textContent = "Resume conversation";
-  c.ui.notice.textContent =
-    "Microphone, playback and particles stopped. Resume or type to continue with this object.";
-  c.ui.typed.open = true;
 }
 function resume(c, listenNow = true) {
   c.ended = false;
   c.autoListen = voiceEnabled;
   c.ui.panel.classList.remove("ended");
-  c.ui.end.textContent = "End conversation";
-  if (voiceEnabled) c.ui.typed.open = false;
   activate(c);
   if (listenNow) listen(c);
 }
@@ -702,43 +795,56 @@ document.addEventListener("ucenth:result-presented", (event) => {
   queueMicrotask(() => {
     reset();
     const ui = buildPanel();
-    if (data.subjectType === "person")
-      ui.heading.textContent = "Ask about this person";
-    if (data.subjectType === "document")
-      ui.heading.textContent = "Ask about this document";
+    if (data.subjectType === "person") ui.heading.textContent = "Ask about this person";
+    if (data.subjectType === "document") ui.heading.textContent = "Ask about this document";
     const c = (current = {
       id: serial,
       ui,
       identification: data,
       document: detail.document || null,
-      image: $("capture").hidden
-        ? ""
-        : $("capture").toDataURL("image/jpeg", 0.88),
+      image: $("capture").hidden ? "" : $("capture").toDataURL("image/jpeg", 0.88),
       history: [],
       turn: 0,
       ended: false,
       active: false,
       autoListen: voiceEnabled,
       state: "IDLE",
+      sttPath: null,
+      fellBack: false,
     });
+    diag("capabilities", capabilities());
     ui.form.onsubmit = (e) => {
       e.preventDefault();
       unlock();
       ask(c, ui.input.value);
     };
-    ui.mic.onclick = () => {
-      if (c.listeningAttempt && !c.stream) return;
+    // The one primary control: its meaning follows the state it was rendered for.
+    ui.primary.onclick = () => {
       unlock();
-      if (c.stream) {
+      const s = c.state;
+      if (["LISTENING", "USER_SPEAKING", "OPENING_MICROPHONE"].includes(s)) {
         c.autoListen = false;
         cancelTurn(c);
         state(c, "MICROPHONE_PAUSED");
-        ui.notice.textContent =
-          "Microphone paused. Type, or select Start listening to resume.";
-      } else {
-        if (c.ended) resume(c, false);
+      } else if (s === "VISION_SPEAKING") {
+        cancelTurn(c);
+        c.autoListen = voiceEnabled;
+        returnToListening(c, c.turn);
+      } else if (s === "VOICE_OFF") {
         voiceEnabled = true;
+        try {
+          localStorage.setItem("ucenth-voice", "on");
+        } catch {}
         setVoiceControls(c);
+        c.autoListen = true;
+        cancelTurn(c);
+        activate(c);
+        listen(c);
+      } else {
+        // Continue, Try voice again, Resume
+        if (c.ended) resume(c, false);
+        c.sttPath = s === "VOICE_UNAVAILABLE" ? null : c.sttPath;
+        c.ui.notice.textContent = "";
         c.autoListen = true;
         cancelTurn(c);
         activate(c);
@@ -746,36 +852,21 @@ document.addEventListener("ucenth:result-presented", (event) => {
       }
     };
     ui.mute.onclick = () => {
-      voiceEnabled = !voiceEnabled;
+      voiceEnabled = false;
       try {
-        localStorage.setItem("ucenth-voice", voiceEnabled ? "on" : "off");
+        localStorage.setItem("ucenth-voice", "off");
       } catch {}
-      setVoiceControls(c);
+      c.autoListen = false;
       cancelTurn(c);
-      if (!voiceEnabled) {
-        c.autoListen = false;
-        state(c, "VOICE_OFF");
-        ui.notice.textContent =
-          "Voice and automatic listening are off. Continue by typing.";
-      } else {
-        unlock();
-        if (c.ended) resume(c, false);
-        activate(c);
-        c.autoListen = true;
-        listen(c);
-      }
+      setVoiceControls(c);
+      state(c, "VOICE_OFF");
     };
-    ui.end.onclick = () => (c.ended ? resume(c) : end(c));
+    ui.end.onclick = () => end(c);
     setVoiceControls(c);
     if (voiceEnabled) {
       const uncertain = data.needsAnotherView || data.confidence !== "high";
-      const intro =
-        data.conversationIntro ||
-        (uncertain
-          ? `This appears to be ${data.name}. The exact variant is uncertain. What would you like to know about it?`
-          : `I've identified this as ${data.name}. What would you like to know about it?`);
+      const intro = data.conversationIntro || (uncertain ? `This appears to be ${data.name}. The exact variant is uncertain. What would you like to know about it?` : `I've identified this as ${data.name}. What would you like to know about it?`);
       ui.answer.textContent = intro;
-      ui.notice.textContent = "Preparing your spoken introduction…";
       speak(c, intro, 0, detail.chimeCompletion || Promise.resolve());
     } else state(c, "VOICE_OFF");
   });

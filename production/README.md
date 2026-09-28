@@ -128,6 +128,19 @@ Do not change DNS until staging has passed acceptance over HTTPS. Google's curre
 3. After the certificate becomes ACTIVE (up to an hour after DNS propagates), set `PUBLIC_ORIGIN=https://vision.ucenth.com`, redeploy, and re-run the HTTPS acceptance list.
 4. Keep the `*.run.app` URL unpublished; the `allowedHosts` pattern accepts both.
 
+## Mobile voice: what changed and why
+
+Physical tests on the first staging build showed "Voice unavailable" on iPhone and a microphone that opened but never produced a question on Android, while desktop worked. Two platform facts explain both, and both are now handled in `voice.js` (educational core, because students on phones need it too):
+
+1. **Microphone ownership.** Desktop Chrome tolerates a live `getUserMedia()` stream (for the particle analyser) alongside `SpeechRecognition`. Android Chrome and iOS Safari do not: the recogniser starves or errors (`audio-capture`, `not-allowed`, silent `end`). On phones the native path now opens no stream; the recogniser owns the microphone and the particles show a restrained listening pulse driven by recognition events. This is documented honestly as a pulse, not audio analysis.
+2. **No native recogniser at all** on iOS Chrome/Firefox (WebKit does not expose it to third-party browsers), and occasional Safari sessions where it errors. Those sessions use the server path: MediaRecorder records the question (`audio/mp4` on iOS, `audio/webm;codecs=opus` elsewhere), the clip goes to `/api/transcribe`, and Gemini transcribes it in memory (about 32 audio tokens per second, no extra API or credential). Speech start and end are detected from the microphone analyser with a noise gate; the same five-second speech-start timeout applies. Clips are never written or logged; the hosted layer bounds transcriptions with the speech budget and never charges a request credit.
+
+Option considered and not chosen for now: Cloud Speech-to-Text v2. It would add an API, an IAM role and per-15-second billing for the same result; Gemini already reaches the project through the service identity and handles the containers MediaRecorder produces. If transcription quality on real iPhone recordings proves insufficient, `createTranscriber()` in `lib/conversation.js` is the single place to swap the engine.
+
+**Diagnostics (staging only).** `DIAGNOSTICS=1` injects `production/public/diag.js`, opened with `?diag=1` or the DIAG button: device capabilities (user agent, platform, `SpeechRecognition`/`webkitSpeechRecognition`, `getUserMedia`, MediaRecorder and its container, AudioContext state, microphone permission), microphone tracks (count, readyState, enabled, muted), every recognition event (`start`, `audiostart`, `soundstart`, `speechstart`, interim/final result sizes, `speechend`, `soundend`, `audioend`, `end`, `error`), fallback decisions, pause reasons, the capture → upload → response → render and question → answer → Charon → playback timeline with server timings, and particle fps. "Copy report" produces a plain-text report. No audio and no images are ever included. Never set `DIAGNOSTICS=1` on the public service.
+
+**Physical acceptance still required** (it cannot be automated from a desktop): five consecutive spoken turns on Android Chrome and five on an iPhone against the staging URL with `?diag=1`, checking Charon finishes, listening begins, speech is detected, the transcript is right enough, Gemini answers, Charon replies, nothing self-triggers, the next cycle works, five seconds of silence pauses, and the microphone indicator goes off. Paste the copied diagnostics report if anything fails.
+
 ## Staging results (28 September 2026)
 
 Staging service: `vision-intelligence-staging` in `europe-west2`, source-deployed with buildpacks (no Docker), 1 vCPU / 1 GiB, concurrency 8, timeout 120 s, min 0 / max 3 instances, Firestore quota store, cookie secret from Secret Manager. Not connected to any domain.

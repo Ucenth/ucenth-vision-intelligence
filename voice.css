@@ -4,6 +4,7 @@
  * colours were tuned as a media surface. Everything else reads the shared tokens.
  * The panel is inserted after #results by voice.js; data-state on .voice-panel lets
  * CSS react to LISTENING / USER_SPEAKING without extra classes. */
+
 /* =========================================================
    PANEL AND PARTICLE FIELD
    ========================================================= */
@@ -12,27 +13,48 @@
 .voice-field {position:absolute;inset:0}
 .voice-field>canvas {width:100%;height:100%;display:block}
 .voice-field>canvas[hidden] {display:none}
-.voice-state {position:absolute;bottom:10px;left:12px;right:12px;text-align:center;margin:0;color:#acc6fb;font-size:10px;line-height:1.5;letter-spacing:.12em;pointer-events:none}
+.voice-state {position:absolute;bottom:10px;left:12px;right:12px;text-align:center;margin:0;color:#acc6fb;font-size:10px;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;pointer-events:none}
 .voice-state::before {content:"";display:inline-block;width:4px;height:4px;border-radius:50%;background:#87b1ff;vertical-align:middle;margin-right:8px}
 .voice-panel[data-state="LISTENING"] .voice-state::before,.voice-panel[data-state="USER_SPEAKING"] .voice-state::before {box-shadow:0 0 4px #87b1ff55}
 .voice-panel:not(.active) .voice-presence {display:none}
 .voice-panel:not(.active) .voice-answer {display:none}
+
+/* =========================================================
+   TRANSCRIPT AND ANSWER
+   Empty paragraphs collapse (:empty) so the layout does not jump
+   between states; the answer scrolls inside a bounded height.
+   ========================================================= */
 .voice-heading {font:500 10px/1.5 var(--mono,ui-monospace,monospace);letter-spacing:.12em;text-transform:uppercase;color:var(--blue);margin:0 0 12px}
 .voice-question {font-size:14px;line-height:1.6;color:var(--secondary);margin:0 0 8px;overflow-wrap:anywhere}
-.voice-question:empty,.voice-interim:empty,.voice-answer:empty {display:none}
+.voice-question:empty,.voice-interim:empty,.voice-answer:empty,.voice-notice:empty {display:none}
 .voice-interim {font-size:16px;line-height:1.6;color:var(--blue);min-height:24px;margin:0 0 12px;overflow-wrap:anywhere}
 .voice-answer {font-size:18px;line-height:1.6;color:var(--text);margin:0 0 18px;overflow-wrap:anywhere;max-height:180px;overflow:auto;scrollbar-width:thin}
-.voice-controls {display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
-.voice-button,.voice-send {min-height:40px;border:1px solid var(--line);background:transparent;color:var(--secondary);padding:9px 12px;font-family:inherit;font-size:11px;line-height:1.4;font-weight:500;cursor:pointer}
-.voice-button[aria-pressed="true"] {color:var(--blue);border-color:var(--frame)}
-.voice-button:hover,.voice-send:hover {border-color:var(--blue);color:var(--text)}
-.voice-button:focus-visible,.voice-send:focus-visible,.voice-form input:focus-visible,.voice-typed summary:focus-visible,.voice-identification-details summary:focus-visible {outline:2px solid var(--blue);outline-offset:3px}
-.voice-typed {color:var(--secondary);font-size:12px;line-height:1.7;margin-top:10px}
-.voice-typed summary,.voice-identification-details>summary {cursor:pointer;padding:8px 0}
-.voice-form {display:flex;gap:8px;margin-top:8px;align-items:stretch}
-.voice-form input {min-width:0;flex:1;background:var(--bg);color:var(--text);border:1px solid var(--line);padding:10px 12px;font:inherit;font-size:15px}
-.voice-send {white-space:nowrap;color:var(--button-text);background:var(--button)}
-.voice-notice {font-size:11px;line-height:1.65;color:var(--muted);margin:12px 0 0}
+
+/* =========================================================
+   CONTROLS
+   One primary control whose label follows the state, two quiet
+   text controls, and a typed fallback. Touch targets are 44px.
+   ========================================================= */
+.voice-controls {display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;margin:12px 0 4px}
+.voice-primary {min-height:44px;min-width:128px;border:1px solid var(--frame);background:transparent;color:var(--text);padding:10px 18px;font-family:inherit;font-size:13px;line-height:1.4;font-weight:500;cursor:pointer;transition:border-color .15s ease,background-color .15s ease,transform .08s ease}
+.voice-primary:hover {border-color:var(--blue)}
+.voice-primary:active {transform:translateY(1px)}
+.voice-primary[aria-pressed="true"] {color:var(--blue);border-color:var(--blue)}
+.voice-panel[data-state="CONVERSATION_PAUSED"] .voice-primary,.voice-panel[data-state="MICROPHONE_PAUSED"] .voice-primary,.voice-panel[data-state="VOICE_OFF"] .voice-primary,.voice-panel[data-state="CONVERSATION_ENDED"] .voice-primary {background:var(--button);color:var(--button-text);border-color:var(--button)}
+.voice-text {min-height:44px;border:0;background:transparent;color:var(--muted);padding:10px 2px;font-family:inherit;font-size:12px;line-height:1.4;cursor:pointer;text-decoration:underline;text-underline-offset:4px;text-decoration-color:transparent;transition:color .15s ease,text-decoration-color .15s ease}
+.voice-text:hover {color:var(--text);text-decoration-color:currentColor}
+.voice-primary:focus-visible,.voice-text:focus-visible,.voice-send:focus-visible,.voice-form input:focus-visible,.voice-typed summary:focus-visible,.voice-identification-details summary:focus-visible {outline:2px solid var(--blue);outline-offset:3px}
+.voice-typed {color:var(--secondary);font-size:12px;line-height:1.7;margin-top:6px}
+.voice-typed summary,.voice-identification-details>summary {cursor:pointer;padding:10px 0;min-height:44px;box-sizing:border-box}
+.voice-form {display:flex;gap:8px;margin-top:4px;align-items:stretch}
+.voice-form input {min-width:0;flex:1;background:var(--bg);color:var(--text);border:1px solid var(--line);padding:10px 12px;font:inherit;font-size:15px;min-height:44px}
+.voice-send {min-height:44px;border:1px solid var(--button);background:var(--button);color:var(--button-text);padding:9px 14px;font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap}
+.voice-send:hover {filter:brightness(1.08)}
+.voice-notice {font-size:12px;line-height:1.6;color:var(--muted);margin:10px 0 0}
+
+/* =========================================================
+   IDENTIFICATION DISCLOSURE, FALLBACK AND RESPONSIVE TUNING
+   ========================================================= */
 .voice-identification-details {font-size:12px;line-height:1.6;color:var(--secondary);border-top:1px solid var(--line);padding:0;margin:4px 0 0}
 .voice-identification-details[open] {margin-bottom:15px}
 .voice-identification-details .identity-explanation {margin-top:12px}
@@ -41,5 +63,5 @@
 .particle-fallback canvas {width:220px;height:180px}
 .has-conversation .actions {margin-top:18px}
 @media(max-width:900px){.has-conversation .viewer{height:220px}.has-conversation .voice-presence{height:196px}}
-@media(max-width:480px){.has-conversation .viewer{height:185px}.has-conversation .viewer-top,.has-conversation .viewer-bottom{height:30px}.has-conversation #results .identity-name{font-size:26px;line-height:1.2;margin-bottom:12px}.has-conversation #results dl{margin-bottom:12px}.voice-panel{margin-top:12px;padding-top:12px}.voice-controls{gap:6px}.voice-button{font-size:10px;padding:8px;flex:1}.voice-answer{font-size:17px;line-height:1.55;max-height:155px}.voice-notice{font-size:10px}.voice-state{font-size:9px}.voice-question{font-size:13px}.voice-presence{margin-bottom:14px}}
-@media(prefers-reduced-motion:reduce){.voice-state::before{box-shadow:none!important}}
+@media(max-width:480px){.has-conversation .viewer{height:185px}.has-conversation .viewer-top,.has-conversation .viewer-bottom{height:30px}.has-conversation #results .identity-name{font-size:26px;line-height:1.2;margin-bottom:12px}.has-conversation #results dl{margin-bottom:12px}.voice-panel{margin-top:12px;padding-top:12px}.voice-primary{flex:1 1 100%;min-width:0}.voice-controls{gap:4px 20px}.voice-answer{font-size:17px;line-height:1.55;max-height:155px}.voice-state{font-size:9px}.voice-question{font-size:13px}.voice-presence{margin-bottom:14px}}
+@media(prefers-reduced-motion:reduce){.voice-state::before{box-shadow:none!important}.voice-primary,.voice-text{transition:none}}

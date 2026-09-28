@@ -27,6 +27,14 @@ function status(text) {
   if ($("state-label").textContent !== text)
     $("state-label").textContent = text;
 }
+// Pipeline timing marks (no image data), consumed by the staging diagnostics timeline.
+function mark(name, data = {}) {
+  document.dispatchEvent(
+    new CustomEvent("ucenth:timing", {
+      detail: { t: Math.round(performance.now()), name, ...data },
+    }),
+  );
+}
 /**
  * Keeps the square capture guide the same size as the region crop() will cut out.
  * The guide is presentation only; crop() is what decides which pixels are sent.
@@ -293,6 +301,13 @@ async function captureSource(source) {
       .getContext("2d")
       .drawImage(source, ...region, 0, 0, capture.width, capture.height);
     const image = capture.toDataURL("image/jpeg", 0.88);
+    mark("capture-encoded", {
+      width: capture.width,
+      height: capture.height,
+      sourceWidth: region[2],
+      sourceHeight: region[3],
+      bytes: Math.round((image.length - 23) * 0.75),
+    });
     capture.hidden = false;
     video.hidden = true;
     $("empty-state").hidden = true;
@@ -306,6 +321,7 @@ async function captureSource(source) {
       body: JSON.stringify({ image }),
       signal: controller.signal,
     });
+    mark("upload-start");
     pendingResponse.catch(() => {}); // Still awaited below; avoid an unhandled rejection if an effect throws.
     stopStream();
     // how-to:end camera-capture
@@ -341,9 +357,11 @@ async function captureSource(source) {
           "The scanner backend is unavailable. Start the local server and try again.",
         );
       }
+      mark("response-received", { status: response.status, serverMs: data.elapsedMs });
       if (!response.ok)
         throw new Error(data.error || "The search could not be completed.");
       if (token === generation) await displayResult(data, token);
+      mark("result-rendered");
     } catch (error) {
       if (token === generation)
         showError(

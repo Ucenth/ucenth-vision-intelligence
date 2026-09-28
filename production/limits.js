@@ -10,6 +10,7 @@ export const HOSTED_GUARDS = {
   identify: { perMinute: 600, concurrent: 8 },
   followUp: { perMinute: 600, concurrent: 8 },
   speech: { perMinute: 600, concurrent: 8 },
+  transcribe: { perMinute: 600, concurrent: 8 },
   document: { perMinute: 300, concurrent: 4 },
 };
 export const PUBLIC_LIMITS = {

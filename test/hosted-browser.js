@@ -36,10 +36,11 @@ try {
     Object.defineProperty(navigator, "share", { value: undefined, configurable: true });
   });
   await page.goto(base);
-  const quota = page.locator(".hosted-quota");
-  await page.waitForFunction(() => /free requests remaining/.test(document.querySelector(".hosted-quota")?.textContent || ""), null, { timeout: 30000 });
-  assert.equal(await quota.textContent(), `${LIMIT} of ${LIMIT} free requests remaining · 5-hour allowance`);
-  assert.equal(await page.locator(".hosted-source h2").textContent(), "Learn how it works. Build your own.");
+  // The allowance lives in the masthead: a count and a countdown to the next credit.
+  await page.waitForFunction((n) => document.querySelector(".hosted-usage-count")?.textContent === `${n} / ${n}`, LIMIT, { timeout: 30000 });
+  assert.equal(await page.locator(".hosted-usage").getAttribute("aria-label"), `${LIMIT} of ${LIMIT} free requests available.`);
+  assert.match(await page.locator(".hosted-source h2").textContent(), /Learn how it works./);
+  assert.match(await page.locator(".hosted-meta-version").textContent(), /Source Edition · v\d+\.\d+\.\d+/);
   const download = await page.request.get(`${base}/download/ucenth-vision-intelligence-source.zip`);
   assert.equal(download.status(), 200);
   assert.equal(download.headers()["content-type"], "application/zip");
@@ -49,25 +50,25 @@ try {
     await upload();
     await page.waitForFunction(() => ["LISTENING", "USER_SPEAKING"].includes(document.querySelector(".voice-panel")?.dataset.state), null, { timeout: 20000 });
     // After the last credit the line switches to the exhaustion wording with the wait time.
-    await page.waitForFunction((n) => { const t = document.querySelector(".hosted-quota")?.textContent || ""; return n > 0 ? t.startsWith(`${n} of`) : /Free usage limit reached · Available again in/.test(t); }, LIMIT - i, { timeout: 15000 });
-    await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+    await page.waitForFunction((n) => document.querySelector(".hosted-usage-count")?.textContent === `${n} / 5` && /next in dd:dd:dd/.test(document.querySelector(".hosted-usage-detail")?.textContent || ""), LIMIT - i, { timeout: 15000 });
+    await page.getByRole("button", { name: "Pause", exact: true }).click();
     await page.locator("#reset").click();
   }
   await upload();
   await page.locator(".error-title").waitFor();
   assert.match(await page.locator(".error-title").textContent(), /^Free usage limit reached\. You can use UCENTH Vision Intelligence again in \d+h \d{2}m\.$/);
-  await page.waitForFunction(() => /Free usage limit reached · Available again in/.test(document.querySelector(".hosted-quota")?.textContent || ""));
+  assert.match(await page.locator(".hosted-usage").getAttribute("aria-label"), /^0 of 5 requests remaining. Next request available in /);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no overflow at phone width");
-  await page.getByRole("button", { name: "Share" }).click();
+  await page.getByRole("button", { name: "Share Project" }).click();
   await page.waitForFunction(() => document.querySelector(".hosted-share-status")?.textContent);
-  assert.match(await page.locator(".hosted-share-status").textContent(), /Link copied|Thanks|http/);
+  assert.match(await page.locator(".hosted-share-status").textContent(), /Link copied|Shared|http/);
   assert.deepEqual(errors, []);
-  console.log("Hosted Chrome checks passed: allowance line, five charged requests, exhaustion message, download, share, phone layout.");
+  console.log("Hosted Chrome checks passed: allowance line, five charged requests, exhaustion countdown, download card, share, phone layout.");
 } catch (error) {
   console.error("Hosted Chrome checks failed:", error.message);
   console.error("API trail:\n" + trail.join("\n"));
-  console.error("quota line:", await page.locator(".hosted-quota").textContent().catch(() => "(missing)"));
+  console.error("usage:", await page.locator(".hosted-usage").textContent().catch(() => "(missing)"));
   process.exitCode = 1;
 } finally {
   await browser.close();

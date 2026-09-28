@@ -39,6 +39,8 @@ export function status(record, now = Date.now()) {
     remaining,
     limit: LIMIT,
     resetAt: remaining === 0 && oldest !== null ? oldest + WINDOW_MS : null,
+    // Rolling window: the next single credit returns when the oldest use expires.
+    nextAt: oldest !== null ? oldest + WINDOW_MS : null,
     inflight: Object.keys(r.inflight).length,
   };
 }

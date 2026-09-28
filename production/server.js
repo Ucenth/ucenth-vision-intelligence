@@ -58,8 +58,11 @@ export async function createHostedServer({ env = process.env, store, services = 
     };
   }
   const zip = await buildEducationalZip();
+  const pkg = JSON.parse(await readFile(new URL("package.json", root), "utf8"));
+  const source = { version: pkg.version, files: files.length, bytes: zip.length, license: "MIT" };
   const publicHost = new URL(publicOrigin).host.replace(/\./g, "\\.");
-  const before = createHostedLayer({ store, secret, publicOrigin, root, zip, secureCookies: publicOrigin.startsWith("https"), env });
+  // DIAGNOSTICS=1 injects the mobile voice diagnostics panel (staging only).
+  const before = createHostedLayer({ store, secret, publicOrigin, root, zip, source, diagnostics: env.DIAGNOSTICS === "1", secureCookies: publicOrigin.startsWith("https"), env });
   const server = createServer({
     ...services,
     allowedHosts: new RegExp(`^(${publicHost}|localhost(:\\d+)?|127\\.0\\.0\\.1(:\\d+)?|[a-z0-9-]+\\.[a-z0-9-]+\\.run\\.app)$`, "i"),

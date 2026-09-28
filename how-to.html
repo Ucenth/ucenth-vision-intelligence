@@ -572,6 +572,13 @@ return remaining &gt; 0
   .getContext("2d")
   .drawImage(source, ...region, 0, 0, capture.width, capture.height);
 const image = capture.toDataURL("image/jpeg", 0.88);
+mark("capture-encoded", {
+  width: capture.width,
+  height: capture.height,
+  sourceWidth: region[2],
+  sourceHeight: region[3],
+  bytes: Math.round((image.length - 23) * 0.75),
+});
 capture.hidden = false;
 video.hidden = true;
 $("empty-state").hidden = true;
@@ -585,6 +592,7 @@ const pendingResponse = fetch("/api/identify", {
   body: JSON.stringify({ image }),
   signal: controller.signal,
 });
+mark("upload-start");
 pendingResponse.catch(() =&gt; {}); // Still awaited below; avoid an unhandled rejection if an effect throws.
 stopStream();</code></pre>
             </div>
@@ -981,6 +989,19 @@ recognition.lang = "en-US";
 recognition.interimResults = true;
 recognition.continuous = true;</code></pre>
             </div>
+            <div class="callout why">
+              <strong>Why phones hand the microphone to the recogniser alone</strong>
+              <p>
+                Desktop Chrome tolerates a second <code>getUserMedia()</code> stream (for the
+                particle analyser) alongside SpeechRecognition. Android and iOS do not: the
+                recogniser then hears nothing or fails. So on phones <code>listenNative()</code>
+                opens no stream and the particles use a restrained listening pulse driven by
+                recognition events. Browsers without a usable native recogniser (iOS Chrome,
+                some Safari sessions) record a short clip with MediaRecorder and send it to
+                <code>/api/transcribe</code>, where Gemini transcribes it in memory; the loop
+                and the interface stay identical.
+              </p>
+            </div>
             <p>
               Speech is confirmed by the recognizer's own classifier (held for 200 ms)
               or by a transcript, never by microphone volume, so a loud room does not
@@ -1062,14 +1083,14 @@ c.playback.onended = () =&gt; {
   c.outputAnalyser?.disconnect();
   c.outputAnalyser = null;
   c.particles.disconnect();
+  mark("playback-end");
   returnToListening(c, turn);
 };
 c.ui.answer.textContent = text;
 c.pendingAnswer = null;
 state(c, "VISION_SPEAKING");
-c.ui.notice.textContent =
-  "Charon speaking · Microphone and speech recognition are stopped.";
-c.playback.start();</code></pre>
+c.playback.start();
+mark("playback-start");</code></pre>
             </div>
             <h4>The five-second timeout</h4>
             <p>

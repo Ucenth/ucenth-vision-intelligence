@@ -38,6 +38,8 @@ export function createHostedLayer({
   publicOrigin,
   root,
   zip,
+  source = {},
+  diagnostics = false,
   secureCookies = true,
   env = process.env,
 } = {}) {
@@ -53,7 +55,8 @@ export function createHostedLayer({
       let html = await readFile(new URL(name, root), "utf8");
       const canonical = `${publicOrigin}/${name === "index.html" ? "" : name}`;
       const meta = `    <link rel="canonical" href="${canonical}" />\n    <meta property="og:url" content="${canonical}" />\n    <meta name="robots" content="index, follow" />\n`;
-      const hosted = name === "index.html" ? `    <link rel="stylesheet" href="/hosted.css" />\n    <script type="module" src="/hosted.js"></script>\n` : "";
+      // The diagnostics panel is a staging-only script: never injected in production.
+      const hosted = name === "index.html" ? `    <link rel="stylesheet" href="/hosted.css" />\n    <script type="module" src="/hosted.js"></script>\n${diagnostics ? `    <script type="module" src="/diag.js"></script>\n` : ""}` : "";
       html = html.replace("</head>", `${meta}${hosted}  </head>`);
       pages.set(name, html);
     }
@@ -82,7 +85,7 @@ export function createHostedLayer({
       res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${publicOrigin}/</loc></url>\n  <url><loc>${publicOrigin}/how-to.html</loc></url>\n</urlset>\n`);
       return true;
     }
-    if (req.method === "GET" && (pathname === "/hosted.js" || pathname === "/hosted.css")) {
+    if (req.method === "GET" && (pathname === "/hosted.js" || pathname === "/hosted.css" || (diagnostics && pathname === "/diag.js"))) {
       res.writeHead(200, { "Content-Type": (pathname.endsWith(".js") ? "text/javascript" : "text/css") + "; charset=utf-8", "Cache-Control": "public, max-age=300" });
       res.end(await readFile(new URL(`production/public${pathname}`, root)));
       return true;
@@ -103,10 +106,14 @@ export function createHostedLayer({
       const visitor = visitors.resolve(req, res);
       const s = status((await store.get(`visitor:${visitor.id}`)) || emptyRecord());
       quotaHeaders(res, s);
-      json(res, 200, { remaining: s.remaining, limit: s.limit, resetAt: s.resetAt, windowHours: WINDOW_MS / 3600000, paused: await circuit.paused(), challenge: challenge.siteKey });
+      json(res, 200, { remaining: s.remaining, limit: s.limit, resetAt: s.resetAt, nextAt: s.nextAt, serverTime: Date.now(), windowHours: WINDOW_MS / 3600000, paused: await circuit.paused(), challenge: challenge.siteKey });
       return true;
     }
-    if (req.method !== "POST" || !(INTELLIGENCE.has(pathname) || pathname === "/api/speech")) return false;
+    if (req.method === "GET" && pathname === "/api/source") {
+      json(res, 200, source);
+      return true;
+    }
+    if (req.method !== "POST" || !(INTELLIGENCE.has(pathname) || pathname === "/api/speech" || pathname === "/api/transcribe")) return false;
     try {
       return await gate(req, res, pathname, type, done);
     } catch (error) {
@@ -120,7 +127,9 @@ export function createHostedLayer({
     const visitor = visitors.resolve(req, res);
     if (visitor.isNew) await network.note(req, "new-visitor");
     const key = `visitor:${visitor.id}`;
-    if (pathname === "/api/speech") {
+    // Speech synthesis and clip transcription belong to the same user action as the
+    // question; they share one bounded budget and never cost a request credit.
+    if (pathname === "/api/speech" || pathname === "/api/transcribe") {
       const ok = await store.update(key, async (current) => {
         const r = reserveSpeech(current || emptyRecord());
         return { value: r.record, result: r.allowed };

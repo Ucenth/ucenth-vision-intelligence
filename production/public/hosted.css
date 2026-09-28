@@ -1,74 +1,259 @@
 /* Hosted-site additions. Uses the shared theme tokens so dark and light modes match. */
-.hosted-quota {
-  font-size: 12px;
-  line-height: 1.6;
-  letter-spacing: 0.5px;
+
+/* =========================================================
+   ALLOWANCE IN THE MASTHEAD
+   A quiet two-line figure beside the appearance controls; on
+   phones it collapses to "3/5 · 02:41:18" with a full aria-label.
+   ========================================================= */
+.hosted-usage {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  margin-right: 22px;
+  padding: 4px 0;
+  color: var(--text);
+  text-decoration: none;
+  line-height: 1.2;
+}
+.hosted-usage-count {
+  font-size: 14px;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.hosted-usage-detail {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
   color: var(--muted);
-  margin: 10px 0 0;
+  font-variant-numeric: tabular-nums;
 }
-.hosted-quota:empty {
-  display: none;
+.hosted-usage[data-state="exhausted"] .hosted-usage-count,
+.hosted-usage[data-state="paused"] .hosted-usage-count {
+  color: var(--blue);
 }
+.hosted-usage:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+}
+
+/* =========================================================
+   OPEN SOURCE / EDUCATION SECTION
+   Editorial two-column layout: intro on the left, two cards on
+   the right; a thin footer row for GitHub, license and share.
+   ========================================================= */
 .hosted-source {
-  margin: 0 5.2% 40px;
-  padding: 34px 0 0;
+  margin: 0 5.2% 44px;
+  padding: 44px 0 0;
   border-top: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: 32px 56px;
 }
-.hosted-source h2 {
-  font-size: clamp(26px, 2.6vw, 34px);
-  font-weight: 400;
-  letter-spacing: -0.8px;
-  line-height: 1.15;
+.hosted-source .eyebrow {
   margin: 0 0 14px;
 }
-.hosted-source p {
-  max-width: 64ch;
+.hosted-source h2 {
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 400;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin: 0 0 16px;
+}
+.hosted-source-intro p:not(.eyebrow) {
+  max-width: 44ch;
   font-size: 16px;
   line-height: 1.6;
   color: var(--secondary);
-  margin: 0 0 18px;
+  margin: 0;
 }
-.hosted-actions {
+.hosted-source-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.hosted-card {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 10px;
-  margin: 0 0 22px;
-}
-.hosted-button {
-  display: inline-block;
-  padding: 12px 16px;
+  padding: 22px 22px 20px;
   border: 1px solid var(--line);
+  background: var(--panel);
   color: var(--text);
   text-decoration: none;
-  font: inherit;
-  font-size: 14px;
-  background: transparent;
-  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.15s ease, transform 0.12s ease;
 }
-.hosted-button:hover {
+.hosted-card:hover {
   border-color: var(--blue);
 }
-.hosted-button.primary {
-  background: var(--button);
-  color: var(--button-text);
-  border-color: var(--button);
+a.hosted-card:active {
+  transform: translateY(1px);
 }
-.hosted-share-copy {
-  margin-top: 10px;
+.hosted-card:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
 }
-.hosted-share-status {
-  font-size: 13px;
+.hosted-card-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--blue);
+}
+.hosted-card-title {
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.3px;
+}
+.hosted-card p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--secondary);
+  margin: 0;
+}
+.hosted-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+  margin: 6px 0 4px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+.hosted-card-meta div {
+  display: contents;
+}
+.hosted-card-meta dt {
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
   color: var(--muted);
 }
+.hosted-card-meta dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.hosted-card-action,
+.hosted-link {
+  margin-top: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+  color: var(--blue);
+  text-decoration: none;
+}
+.hosted-card-action svg {
+  width: 16px;
+  height: 16px;
+  transition: transform 0.15s ease;
+}
+.hosted-download:hover .hosted-card-action svg {
+  transform: translateY(2px);
+}
+.hosted-link:hover span {
+  transform: translateX(3px);
+}
+.hosted-link span {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+.hosted-card-status,
+.hosted-share-status {
+  font-size: 12px;
+  color: var(--muted);
+}
+.hosted-card-status:empty,
 .hosted-share-status:empty {
   display: none;
 }
+.hosted-source-footer {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 28px;
+  padding: 18px 0 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.hosted-source-footer a {
+  color: var(--secondary);
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.hosted-source-footer a:hover {
+  color: var(--blue);
+}
+.hosted-share {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+}
+.hosted-share button {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.hosted-share button:hover {
+  border-color: var(--blue);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hosted-card,
+  .hosted-card-action svg,
+  .hosted-link span,
+  .hosted-share button {
+    transition: none;
+  }
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width: 1100px) {
+  .hosted-source {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 26px;
+  }
+}
 @media (max-width: 800px) {
+  .hosted-usage {
+    margin-right: 12px;
+    flex-direction: row;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .hosted-usage-count {
+    font-size: 13px;
+  }
+  .hosted-usage-detail {
+    font-size: 10px;
+    letter-spacing: 0.8px;
+    text-transform: none;
+  }
   .hosted-source {
     margin: 0 24px 32px;
+    padding-top: 30px;
   }
-  .hosted-button {
-    flex: 1 1 45%;
-    text-align: center;
+  .hosted-source-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hosted-card {
+    padding: 18px;
+  }
+  .hosted-share {
+    margin-left: 0;
+    flex-wrap: wrap;
   }
 }
