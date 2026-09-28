@@ -16,7 +16,7 @@
 import { GoogleAuth } from "google-auth-library";
 import { createHash } from "node:crypto";
 
-const RETRIES = 6;
+const RETRIES = 10;
 export function createFirestoreStore({
   project = process.env.FIRESTORE_PROJECT || process.env.GOOGLE_CLOUD_PROJECT,
   database = process.env.FIRESTORE_DATABASE || "(default)",
@@ -67,6 +67,7 @@ export function createFirestoreStore({
     if (r.status === 409 || r.status === 412 || r.status === 400) return false; // precondition failed: retry
     throw new Error(`Firestore write failed (${r.status})`);
   }
+  const fullName = (key) => docName(key).replace(`${base}/`, `projects/${project}/databases/${database}/documents/`);
   return {
     kind: "firestore",
     async update(key, fn) {
@@ -74,12 +75,28 @@ export function createFirestoreStore({
         const { value: current, updateTime } = await read(key);
         const { value, result } = await fn(current);
         if (await write(key, value, updateTime)) return result;
-        await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+        // Exponential backoff with jitter so concurrent writers to one record spread out.
+        await new Promise((r) => setTimeout(r, Math.round((30 * 2 ** attempt) * (0.5 + Math.random()))));
       }
       throw new Error("Firestore update contended too many times");
     },
     async get(key) {
-      return (await read(key)).value;
+      const r = await request(docName(key));
+      if (r.status === 404) return null;
+      if (r.status !== 200) throw new Error(`Firestore read failed (${r.status})`);
+      const fields = r.data.fields || {};
+      if (fields.state?.stringValue) return JSON.parse(fields.state.stringValue);
+      // Counter documents: plain integer fields.
+      return Object.fromEntries(Object.entries(fields).filter(([, v]) => v.integerValue !== undefined).map(([k, v]) => [k, Number(v.integerValue)]));
+    },
+    // Server-side atomic increment: no read, no precondition, so it never contends.
+    async increment(key, field, n) {
+      const name = fullName(key);
+      const r = await request(`${base}:commit`, { method: "POST", data: { writes: [
+        { update: { name, fields: { expireAt: { timestampValue: new Date(Date.now() + ttlMs).toISOString() } } }, updateMask: { fieldPaths: ["expireAt"] } },
+        { transform: { document: name, fieldTransforms: [{ fieldPath: field, increment: { integerValue: String(n) } }] } },
+      ] } });
+      if (r.status !== 200) throw new Error(`Firestore increment failed (${r.status})`);
     },
     async close() {},
   };

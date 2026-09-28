@@ -3,44 +3,46 @@
  * only to notice patterns a single person does not produce, and it is stored as a
  * salted hash with a short TTL, never raw.
  *
- * Signals (per hashed source address, rolling one hour):
- *   newVisitors  how many fresh visitor ids were issued (cookie clearing / rotation)
- *   accepted     how many intelligence requests were accepted across all visitors
- * Crossing a threshold flags the source: further intelligence requests from it are
- * asked to pass a challenge when one is configured, or refused politely until the
- * counters decay. Ordinary shared networks stay far below these numbers. */
+ * Signals per hashed source address, in hourly buckets (current + previous bucket are
+ * summed, so the window is between one and two hours):
+ *   newVisitors  fresh visitor ids issued (cookie clearing / identity rotation)
+ *   accepted     intelligence requests accepted across all visitors behind the address
+ * Crossing a threshold flags the source: further intelligence requests must pass a
+ * challenge when one is configured, or are refused politely until the counters roll
+ * over. Ordinary shared networks stay far below these numbers.
+ *
+ * Counters use atomic increments (no read-modify-write), so a burst of requests from
+ * one address never contends on a single document. */
 import { createHash } from "node:crypto";
 
-export const WINDOW_MS = 60 * 60 * 1000;
+export const BUCKET_MS = 60 * 60 * 1000;
 export const NEW_VISITORS_PER_HOUR = 30;
 export const ACCEPTED_PER_HOUR = 60;
 
 export function sourceAddress(req) {
-  // Cloud Run puts the client address first in X-Forwarded-For; locally use the socket.
-  const forwarded = (req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return forwarded || req.socket?.remoteAddress || "unknown";
+  // Behind Cloud Run the trusted proxy appends the real client address as the LAST entry
+  // of X-Forwarded-For, so a client cannot pick its own by sending the header itself.
+  const forwarded = (req.headers["x-forwarded-for"] || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return forwarded.at(-1) || req.socket?.remoteAddress || "unknown";
 }
 export function createNetworkSignals({ store, secret }) {
   const hash = (ip) => createHash("sha256").update(`${secret}:${ip}`).digest("base64url").slice(0, 32);
-  const prune = (r, now) => ({
-    newVisitors: (r?.newVisitors || []).filter((t) => now - t < WINDOW_MS),
-    accepted: (r?.accepted || []).filter((t) => now - t < WINDOW_MS),
-  });
+  const key = (req, bucket) => `net:${hash(sourceAddress(req))}:${bucket}`;
+  const bucketOf = (now) => Math.floor(now / BUCKET_MS);
+  const total = async (req, field, now) => {
+    const [current, previous] = await Promise.all([store.get(key(req, bucketOf(now))), store.get(key(req, bucketOf(now) - 1))]);
+    return Number(current?.[field] || 0) + Number(previous?.[field] || 0);
+  };
   return {
-    key: (req) => `net:${hash(sourceAddress(req))}`,
-    /** Records an event and reports whether the source now looks abusive. */
+    key,
+    /** Records an event: "new-visitor" or "accepted". */
     async note(req, event, now = Date.now()) {
-      return store.update(this.key(req), async (current) => {
-        const r = prune(current, now);
-        if (event === "new-visitor") r.newVisitors.push(now);
-        if (event === "accepted") r.accepted.push(now);
-        const flagged = r.newVisitors.length > NEW_VISITORS_PER_HOUR || r.accepted.length > ACCEPTED_PER_HOUR;
-        return { value: r, result: { flagged, newVisitors: r.newVisitors.length, accepted: r.accepted.length } };
-      });
+      const field = event === "new-visitor" ? "newVisitors" : "accepted";
+      await store.increment(key(req, bucketOf(now)), field, 1);
     },
     async flagged(req, now = Date.now()) {
-      const r = prune(await store.get(this.key(req)), now);
-      return r.newVisitors.length > NEW_VISITORS_PER_HOUR || r.accepted.length > ACCEPTED_PER_HOUR;
+      const [newVisitors, accepted] = await Promise.all([total(req, "newVisitors", now), total(req, "accepted", now)]);
+      return newVisitors > NEW_VISITORS_PER_HOUR || accepted > ACCEPTED_PER_HOUR;
     },
   };
 }

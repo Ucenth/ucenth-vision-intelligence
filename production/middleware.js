@@ -107,7 +107,16 @@ export function createHostedLayer({
       return true;
     }
     if (req.method !== "POST" || !(INTELLIGENCE.has(pathname) || pathname === "/api/speech")) return false;
-
+    try {
+      return await gate(req, res, pathname, type, done);
+    } catch (error) {
+      // A store failure must never leak or hang; fail closed with the capacity message.
+      logEvent({ path: pathname, type, status: 503, quota: "store-error", error: error.message });
+      json(res, 503, { error: MESSAGES.paused });
+      return true;
+    }
+  };
+  async function gate(req, res, pathname, type, done) {
     const visitor = visitors.resolve(req, res);
     if (visitor.isNew) await network.note(req, "new-visitor");
     const key = `visitor:${visitor.id}`;
@@ -141,13 +150,16 @@ export function createHostedLayer({
       const r = reserve(current || emptyRecord(), id);
       return { value: r.record, result: r };
     });
-    quotaHeaders(res, decision);
     if (!decision.allowed) {
       if (decision.reason === "busy") json(res, 429, { error: MESSAGES.busy });
-      else json(res, 429, { error: MESSAGES.exhausted(formatWait(decision.resetAt - Date.now())), remaining: 0, resetAt: decision.resetAt });
+      else {
+        quotaHeaders(res, decision);
+        json(res, 429, { error: MESSAGES.exhausted(formatWait(decision.resetAt - Date.now())), remaining: 0, resetAt: decision.resetAt });
+      }
       done(429, { quota: decision.reason });
       return true;
     }
+    quotaHeaders(res, decision);
     // Settle when the response finishes: only a successful upstream result keeps the credit.
     res.on("finish", async () => {
       const success = res.statusCode < 400;
@@ -160,5 +172,5 @@ export function createHostedLayer({
       done(res.statusCode, { quota: success ? "charged" : "refunded", remaining: success ? decision.remaining : decision.remaining + 1 });
     });
     return false;
-  };
+  }
 }

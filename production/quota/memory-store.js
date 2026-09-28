@@ -22,6 +22,11 @@ export function createMemoryStore() {
     async get(key) {
       return map.get(key) ?? null;
     },
+    // Atomic counter without read-modify-write, mirroring Firestore's increment transform.
+    async increment(key, field, n) {
+      const current = map.get(key) ?? {};
+      map.set(key, { ...current, [field]: Number(current[field] || 0) + n });
+    },
     async close() {},
   };
 }

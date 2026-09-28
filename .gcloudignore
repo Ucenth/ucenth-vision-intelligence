@@ -1,8 +1,8 @@
 # Files not uploaded by `gcloud run deploy --source .` (hosted deployment only).
 # Dependencies are installed by the buildpack from package-lock.json.
 .git
-.gitignore
 .gcloudignore
+# .gitignore stays: it is part of the educational ZIP the server builds at start-up.
 node_modules/
 .npm-cache/
 .env
