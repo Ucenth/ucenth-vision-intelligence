@@ -1107,9 +1107,9 @@ state(c, "VISION_SPEAKING");
 play(audio);
 mark("playback-start", { contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
 // Output probe: iOS can leave a context that says "running" but renders nothing
-// after an idle period (seen physically: answer shown, no sound, playback never
-// ending). A short way into playback the analyser must show signal; exact zeros
-// mean a stalled graph, so it is rebuilt once and the same audio decoded again.
+// (seen physically: answer shown, no sound, playback never ending). A short way
+// into playback the analyser must show signal; exact zeros end the turn at once so
+// the written answer stands and listening continues, instead of a silent wait.
 const probeAt = Math.min(600, Math.max(120, audio.duration * 500));
 const probe = () =&gt; {
   c.playbackProbe = setTimeout(async () =&gt; {
@@ -1121,6 +1121,10 @@ const probe = () =&gt; {
     const rms = Math.sqrt(sum / data.length);
     diag("playback", { rms: +rms.toFixed(4), contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none", probeAt: Math.round(probeAt), recovered: c.playbackRecovered });
     if (rms &gt; 0 || c.playbackRecovered) return;
+    // Nothing is being rendered. Rebuilding the context is not an option here (a
+    // context created outside a tap stays suspended on iOS until the next tap), so
+    // the written answer stands, the turn ends now instead of after a silent clip,
+    // and listening continues.
     c.playbackRecovered = true;
     diag("playback.silent", { contextState: audioContext.state });
     c.playback.onended = null;
@@ -1128,15 +1132,12 @@ const probe = () =&gt; {
       c.playback.stop();
     } catch {}
     c.playback.disconnect();
+    c.playback = null;
     c.outputAnalyser.disconnect();
+    c.outputAnalyser = null;
     c.particles.disconnect();
-    await recreateAudioContext();
-    if (!valid(c, turn) || !encoded) return;
-    const again = await audioContext.decodeAudioData(encoded.slice(0));
-    if (!valid(c, turn)) return;
-    play(again);
-    mark("playback-restart", { contextState: audioContext.state });
-    probe(); // logs the replay's level; the recovered flag stops any second rebuild
+    mark("playback-end", { silent: true });
+    returnToListening(c, turn);
   }, probeAt);
 };
 probe();</code></pre>

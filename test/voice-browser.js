@@ -204,11 +204,40 @@ try {
   await page.locator("#reset").click();
   assert.equal(await page.locator(".voice-panel").count(), 0);
   assert.deepEqual(errors, []);
-  // iOS Safari lifecycle: the native recogniser aborts a few milliseconds after start.
-  // The session must fall back to recorded clips once, remember that for the page, and
-  // start the NEXT conversation directly on the server path without a native attempt.
-  // An iPhone user agent so the mobile rules apply (no desktop analyser stream on the
-  // native path, iOS keepalive on the recorded-clip path).
+  // Native recogniser that aborts a few milliseconds after start (seen on iOS 26): the
+  // session falls back to recorded clips once, remembers that for the page, and starts
+  // the NEXT conversation on the server path without a native attempt. Desktop user
+  // agent here so the native path is actually tried; iOS itself never tries it now.
+  const abortPage = await context.newPage(); const abortErrors = [];
+  abortPage.on("pageerror", e => abortErrors.push(e.message));
+  await abortPage.addInitScript(() => {
+    localStorage.setItem("ucenth-voice", "on");
+    window.diagLog = []; window.nativeStarts = 0;
+    document.addEventListener("ucenth:voice-diag", e => window.diagLog.push(e.detail));
+    window.SpeechRecognition = class {
+      start() { window.nativeStarts++; setTimeout(() => this.onstart?.(), 0); setTimeout(() => this.onaudiostart?.(), 2); setTimeout(() => this.onerror?.({ error: "aborted" }), 7); }
+      abort() {}
+    };
+  });
+  const replies = [["**/api/identify", { json: identity }], ["**/api/speech", { contentType: "audio/wav", body: wav }], ["**/api/transcribe", { json: { text: "Can you still hear me clearly?" } }], ["**/api/follow-up", { json: { answer: "Yes.", userSuppliedIdentity: "" } }]];
+  for (const [path, reply] of replies) await abortPage.route(path, route => route.fulfill(reply));
+  await abortPage.goto(base);
+  await abortPage.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
+  await abortPage.waitForFunction(() => window.diagLog.some(d => d.event === "fallback" && d.because === "aborted" && d.remembered === true), null, { timeout: 20000 });
+  await abortPage.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context"), null, { timeout: 10000 });
+  assert.equal(await abortPage.evaluate(() => window.nativeStarts), 1);
+  await abortPage.locator("#reset").click();
+  await abortPage.locator("#upload").setInputFiles({ name: "fixture-2.jpg", mimeType: "image/jpeg", buffer: image });
+  await abortPage.waitForFunction(() => window.diagLog.filter(d => d.event === "listen").length >= 3, null, { timeout: 20000 });
+  const listens = await abortPage.evaluate(() => window.diagLog.filter(d => d.event === "listen").map(d => `${d.path}:${d.nativeUnusable}`));
+  assert.deepEqual(listens.slice(-1), ["server:true"], `second conversation skipped the native recogniser (${listens.join(", ")})`);
+  assert.equal(await abortPage.evaluate(() => window.nativeStarts), 1, "no second native attempt on this page");
+  assert.deepEqual(abortErrors, []);
+  await abortPage.close();
+  // iPhone lifecycle under an iPhone user agent: recorded clips from the first turn
+  // (Safari's recogniser is never tried), the keepalive tone while a microphone is
+  // held, a stale stream after Resume replaced by a fresh one, and a silent playback
+  // ending the turn at once with the written answer standing.
   const iosContext = await browser.newContext({ permissions: ["microphone"], viewport: { width: 390, height: 844 },
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1" });
   const ios = await iosContext.newPage(); const iosErrors = [];
@@ -225,52 +254,36 @@ try {
       if (window.silentNext) { window.silentNext = false; return new AudioContext().createMediaStreamDestination().stream; }
       return realMic(options);
     };
-    window.SpeechRecognition = class {
-      start() { window.nativeStarts++; setTimeout(() => this.onstart?.(), 0); setTimeout(() => this.onaudiostart?.(), 2); setTimeout(() => this.onerror?.({ error: "aborted" }), 7); }
-      abort() {}
-    };
+    window.SpeechRecognition = class { start() { window.nativeStarts++; } abort() {} };
   });
-  await ios.route("**/api/identify", route => route.fulfill({ json: identity }));
-  await ios.route("**/api/speech", route => route.fulfill({ contentType: "audio/wav", body: wav }));
-  await ios.route("**/api/transcribe", route => route.fulfill({ json: { text: "Can you still hear me clearly?" } }));
-  await ios.route("**/api/follow-up", route => route.fulfill({ json: { answer: "Yes.", userSuppliedIdentity: "" } }));
+  for (const [path, reply] of replies) await ios.route(path, route => route.fulfill(reply));
   await ios.goto(base);
   await ios.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
-  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "fallback" && d.because === "aborted" && d.remembered === true), null, { timeout: 20000 });
-  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "listen" && d.path === "server"), null, { timeout: 10000 });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "listen"), null, { timeout: 20000 });
+  assert.equal(await ios.evaluate(() => window.diagLog.find(d => d.event === "listen").path), "server", "iOS starts on recorded clips");
+  assert.equal(await ios.evaluate(() => window.nativeStarts), 0, "Safari's recogniser is never started on iOS");
   await ios.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context"), null, { timeout: 10000 });
-  assert.equal(await ios.evaluate(() => window.nativeStarts), 1);
-  // Second conversation on the same page: straight to the server path, no native start.
-  await ios.locator("#reset").click();
-  await ios.locator("#upload").setInputFiles({ name: "fixture-2.jpg", mimeType: "image/jpeg", buffer: image });
-  await ios.waitForFunction(() => window.diagLog.filter(d => d.event === "listen").length >= 3, null, { timeout: 20000 });
-  const listens = await ios.evaluate(() => window.diagLog.filter(d => d.event === "listen").map(d => `${d.path}:${d.nativeUnusable}`));
-  assert.deepEqual(listens.slice(-1), ["server:true"], `second conversation skipped the native recogniser (${listens.join(", ")})`);
-  assert.equal(await ios.evaluate(() => window.nativeStarts), 1, "no second native attempt on this page");
-  await ios.waitForFunction(() => window.diagLog.filter(d => d.event === "audio-context").length >= 2, null, { timeout: 10000 });
   assert.ok(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context").every(d => ["before", "after", "resumed"].every(k => k in d))), "audio-context diagnostics carry before/after/resumed");
-  // Resume after idle with a stale microphone: the probe sees digital silence, the audio
-  // graph is rebuilt, a fresh stream is requested, and samples flow on the second try.
-  await ios.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING", null, { timeout: 10000 });
-  // The iOS keepalive tone runs only while the recorded-clip path holds a microphone.
-  assert.ok(await ios.evaluate(() => window.diagLog.some(d => d.event === "keepalive" && d.on === true)), "keepalive started before the microphone was requested");
+  await ios.waitForFunction(() => ["LISTENING", "USER SPEAKING"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 10000 });
+  // The keepalive tone runs only while the recorded-clip path holds a microphone.
+  const order = await ios.evaluate(() => ({ keepalive: window.diagLog.findIndex(d => d.event === "keepalive" && d.on === true), microphone: window.diagLog.findIndex(d => d.event === "microphone") }));
+  assert.ok(order.keepalive >= 0 && order.keepalive < order.microphone, `keepalive started before the microphone was attached (${JSON.stringify(order)})`);
   await ios.getByRole("button", { name: "End conversation", exact: true }).click();
   await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "CONVERSATION_ENDED");
   assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "keepalive").at(-1).on), false, "keepalive released with the microphone");
+  // Resume with a stale microphone: silent probe, fresh stream, live signal; no rebuild.
   const micCallsBefore = await ios.evaluate(() => window.micCalls);
   await ios.evaluate(() => { window.silentNext = true; });
   await ios.getByRole("button", { name: "Resume", exact: true }).click();
-  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.silent"), null, { timeout: 10000 });
-  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context.recreated"), null, { timeout: 10000 });
-  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.signal"), null, { timeout: 10000 });
-  const recovery = await ios.evaluate(() => window.diagLog.filter(d => ["microphone.silent", "audio-context.recreated", "microphone.signal"].includes(d.event)).map(d => d.event));
-  assert.deepEqual(recovery, ["microphone.silent", "audio-context.recreated", "microphone.signal"], "one silent probe, one rebuild, then a live signal");
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.silent") && window.diagLog.some(d => d.event === "microphone.signal"), null, { timeout: 15000 });
+  const recovery = await ios.evaluate(() => window.diagLog.filter(d => ["microphone.silent", "microphone.signal", "audio-context.recreated"].includes(d.event)).map(d => d.event));
+  assert.deepEqual(recovery.slice(-2), ["microphone.silent", "microphone.signal"], `silent probe then a live signal, nothing rebuilt (${recovery.join(", ")})`);
   assert.equal(await ios.evaluate(() => window.micCalls), micCallsBefore + 2, "a fresh stream was requested after the stale one");
   assert.ok(await ios.evaluate(() => window.diagLog.find(d => d.event === "microphone.signal").peak > 0));
   assert.ok(["LISTENING", "USER SPEAKING"].includes(await ios.locator(".voice-state").textContent()), "listening continues on the recovered microphone");
-  // Stalled output after idle (seen physically on iOS 18.6): the context says running
-  // but renders zeros. The next answer's first playback is made silent; the probe must
-  // rebuild the graph and replay the same audio exactly once, ending once.
+  // Stalled output (seen physically on iOS 18.6 after Safari's recogniser had run): the
+  // context says running but renders zeros. The next answer's playback is made silent;
+  // the probe must end the turn at once, keep the written answer, and listen again.
   await ios.evaluate(() => {
     window.silentPlaybacks = 1; // the next buffer source plays a zero buffer
     const create = AudioContext.prototype.createBufferSource;
@@ -284,18 +297,14 @@ try {
       return source;
     };
   });
-  const playbackEndsBefore = await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback-restart").length);
   await ios.locator(".voice-typed").evaluate(node => node.open = true);
   await ios.getByRole("textbox", { name: "Question about the scanned object" }).fill("Say that again.");
   await ios.getByRole("button", { name: "Send" }).click();
   await ios.waitForFunction(() => window.diagLog.some(d => d.event === "playback.silent"), null, { timeout: 15000 });
-  await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "IDLE" || ["LISTENING", "USER SPEAKING", "OPENING MICROPHONE"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 15000 });
-  const outputRecovery = await ios.evaluate(() => window.diagLog.filter(d => ["playback.silent", "audio-context.recreated"].includes(d.event)).map(d => d.event));
-  assert.deepEqual(outputRecovery.slice(-2), ["playback.silent", "audio-context.recreated"], "silent first playback rebuilt the graph once");
-  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback.silent").length), 1, "no recovery loop");
-  assert.ok((await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback").length)) >= 2, "the replay was probed too");
-  assert.ok((await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback").at(-1).rms)) > 0, `the replay carried signal (${await ios.evaluate(() => JSON.stringify(window.diagLog.filter(d => ["playback", "playback.silent", "audio-context.recreated", "error", "state"].includes(d.event)).slice(-12)))})`);
-  assert.equal(playbackEndsBefore, 0);
+  await ios.waitForFunction(() => ["LISTENING", "USER SPEAKING", "OPENING MICROPHONE"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 15000 });
+  assert.equal(await ios.locator(".voice-answer").textContent(), "Yes.", "the written answer stands");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback.silent").length), 1, "the silent probe fired once");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context.recreated").length), 0, "no context rebuild on iOS");
   assert.deepEqual(iosErrors, []);
-  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup, iOS fallback memory and stale-microphone recovery.");
+  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup, native-abort memory, iOS recorded-clip path, keepalive, stale-microphone recovery and silent-playback ending.");
 } finally { await browser.close(); }

@@ -100,7 +100,8 @@ export function capabilities() {
     // iOS Chrome and Firefox have no native recogniser at all; everything else tries
     // native first and falls back per session if it fails.
     nativeRecognition: !!Recognition,
-    preferredPath: Recognition ? "native" : "server",
+    // iOS is served by recorded clips regardless (see listen()).
+    preferredPath: Recognition && !ios ? "native" : "server",
   };
 }
 function recorderMime() {
@@ -177,26 +178,6 @@ function stopKeepalive() {
   } catch {}
   keepalive = null;
   diag("keepalive", { on: false });
-}
-/**
- * Last resort for a microphone that delivers digital silence: iOS can leave the whole
- * audio graph stale after an idle period even though the context says "running" and
- * the track says "live". Closing and recreating the context, then asking for a fresh
- * stream, is what brings samples back. Nothing is playing while we listen, so the
- * swap is safe; Charon creates its playback nodes on the current context each time.
- */
-async function recreateAudioContext() {
-  const previous = audioContext;
-  stopKeepalive();
-  // iOS has taken 11 seconds to close a context; never make the person wait for it.
-  try {
-    await Promise.race([previous?.close(), wait(1000)]);
-  } catch {}
-  audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  audioUnlock = audioContext.resume();
-  audioUnlock.catch(() => {});
-  await audioUnlock;
-  diag("audio-context.recreated", { state: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
 }
 for (const id of ["start", "upload", "reset"]) $(id)?.addEventListener("click", unlock, true);
 
@@ -431,7 +412,12 @@ function voiceUnavailable(c, message) {
 async function listen(c) {
   if (!valid(c) || !voiceEnabled || !c.autoListen || document.hidden || c.listeningAttempt || c.recognition || c.recorder) return;
   const caps = capabilities();
-  if (!c.sttPath) c.sttPath = caps.nativeRecognition && !nativeUnusable ? "native" : caps.mediaRecorder && caps.getUserMedia ? "server" : "none";
+  // iOS always uses the recorded-clip path, even where Safari exposes a recogniser:
+  // physically, each use of Safari's recogniser degraded Charon's output (0.04 → 0.002
+  // → 0) because it takes over the audio session and does not hand it back intact, and
+  // on iOS 26 it aborts outright. With our own microphone stream the keepalive and the
+  // session type stay under this page's control.
+  if (!c.sttPath) c.sttPath = caps.nativeRecognition && !nativeUnusable && !caps.ios ? "native" : caps.mediaRecorder && caps.getUserMedia ? "server" : "none";
   diag("listen", { path: c.sttPath, mobile: caps.mobile, nativeUnusable });
   if (c.sttPath === "none") return voiceUnavailable(c, "Voice couldn't start on this device. You can continue by typing.");
   stopMic(c);
@@ -672,8 +658,8 @@ async function listenServer(c, turn, attempt, caps) {
     probed = false;
   // A live, unmuted track that delivers exact digital zeros for the first 700 ms is a
   // stale iOS microphone (seen physically after an idle period: peak 0, 5-byte clip).
-  // Real microphones always carry a noise floor. Recover once per listening session
-  // by rebuilding the audio graph and asking for a fresh stream; a second failure pauses.
+  // Real microphones always carry a noise floor. Recover once per tap by releasing the
+  // stream and asking for a fresh one; a second silent stream pauses with a notice.
   const MIC_PROBE_MS = 700;
   const recoverMicrophone = async () => {
     stopped = true;
@@ -687,8 +673,9 @@ async function listenServer(c, turn, attempt, caps) {
       return;
     }
     c.micRecoveries = attemptNo;
-    await recreateAudioContext();
-    if (!valid(c, turn)) return;
+    // A fresh stream on the same context (with the keepalive already running) is the
+    // whole recovery: rebuilding the context cannot help, because a context created
+    // outside a tap stays suspended on iOS until the next tap.
     c.listeningAttempt = null;
     listen(c);
   };
@@ -806,10 +793,8 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
       unlock();
       await audioUnlock;
       if (!audioContext || audioContext.state !== "running") throw Error("Audio unavailable");
-      encoded = bytes.slice(0); // kept so a stalled first playback can be decoded again
       return audioContext.decodeAudioData(bytes);
     };
-    let encoded = null;
     const audio = await Promise.race([
       ready(),
       new Promise((_, reject) => {
@@ -854,9 +839,9 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
     play(audio);
     mark("playback-start", { contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
     // Output probe: iOS can leave a context that says "running" but renders nothing
-    // after an idle period (seen physically: answer shown, no sound, playback never
-    // ending). A short way into playback the analyser must show signal; exact zeros
-    // mean a stalled graph, so it is rebuilt once and the same audio decoded again.
+    // (seen physically: answer shown, no sound, playback never ending). A short way
+    // into playback the analyser must show signal; exact zeros end the turn at once so
+    // the written answer stands and listening continues, instead of a silent wait.
     const probeAt = Math.min(600, Math.max(120, audio.duration * 500));
     const probe = () => {
       c.playbackProbe = setTimeout(async () => {
@@ -868,6 +853,10 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
         const rms = Math.sqrt(sum / data.length);
         diag("playback", { rms: +rms.toFixed(4), contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none", probeAt: Math.round(probeAt), recovered: c.playbackRecovered });
         if (rms > 0 || c.playbackRecovered) return;
+        // Nothing is being rendered. Rebuilding the context is not an option here (a
+        // context created outside a tap stays suspended on iOS until the next tap), so
+        // the written answer stands, the turn ends now instead of after a silent clip,
+        // and listening continues.
         c.playbackRecovered = true;
         diag("playback.silent", { contextState: audioContext.state });
         c.playback.onended = null;
@@ -875,15 +864,12 @@ async function speak(c, text, turn, chime = Promise.resolve()) {
           c.playback.stop();
         } catch {}
         c.playback.disconnect();
+        c.playback = null;
         c.outputAnalyser.disconnect();
+        c.outputAnalyser = null;
         c.particles.disconnect();
-        await recreateAudioContext();
-        if (!valid(c, turn) || !encoded) return;
-        const again = await audioContext.decodeAudioData(encoded.slice(0));
-        if (!valid(c, turn)) return;
-        play(again);
-        mark("playback-restart", { contextState: audioContext.state });
-        probe(); // logs the replay's level; the recovered flag stops any second rebuild
+        mark("playback-end", { silent: true });
+        returnToListening(c, turn);
       }, probeAt);
     };
     probe();
