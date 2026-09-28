@@ -40,7 +40,33 @@ try {
       start() {
         window.currentRecognition = this;
         voiceProbe.recognition = true; voiceProbe.starts++;
-        if (voiceProbe.starts <= 5) this.timer = setTimeout(() => {
+        const final = (transcript) => Object.assign([{ transcript }], { isFinal: true });
+        // Turn 3 is the Android Chrome pattern from the physical diagnostics: no interim
+        // text; every event opens a NEW result index whose text is the whole hypothesis
+        // so far (empty placeholders first, exact repeats while still listening).
+        if (voiceProbe.starts === 3) {
+          const list = [];
+          const emit = (text) => { list.push(final(text)); this.onresult?.({ resultIndex: list.length - 1, results: [...list] }); };
+          this.timer = setTimeout(() => {
+            emit(""); emit(""); emit("Wh"); emit("What ca");
+            this.timer = setTimeout(() => {
+              emit("What can yo"); emit("What can yo");
+              this.timer = setTimeout(() => { emit("What can you see?"); emit("What can you see?"); }, 250);
+            }, 250);
+          }, 180);
+        }
+        // Turn 4: a late second segment arrives after the settle timer has already started.
+        else if (voiceProbe.starts === 4) this.timer = setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+          this.timer = setTimeout(() => this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] }), 500);
+        }, 180);
+        // Turn 5: the recogniser ends on its own right after accumulated fragments.
+        else if (voiceProbe.starts === 5) this.timer = setTimeout(() => {
+          this.onresult?.({ resultIndex: 0, results: [final("What can")] });
+          this.onresult?.({ resultIndex: 1, results: [final("What can"), final("you see?")] });
+          this.onend?.();
+        }, 180);
+        else if (voiceProbe.starts <= 5) this.timer = setTimeout(() => {
           this.onresult?.({ resultIndex: 0, results: [Object.assign([{ transcript: "What can you see?" }], { isFinal: false })] });
           this.timer = setTimeout(() => this.onresult?.({ resultIndex: 0,
             results: [Object.assign([{ transcript: "What can you see?" }], { isFinal: true })] }), 150);
@@ -75,10 +101,12 @@ try {
   await page.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
   await page.waitForFunction(() => voiceProbe.starts >= 6, null, { timeout: 40000 });
   assert.equal(calls.length, 5); assert.deepEqual(calls.map(c => c.history.length), [0, 2, 4, 6, 6]);
+  // Android-style fragments were joined and sent as one question, not cut off at "What can".
+  assert.deepEqual(calls.map(c => c.question), Array(5).fill("What can you see?"));
   assert.ok(await page.evaluate(() => voiceProbe.overlaps.length === 6 && voiceProbe.overlaps.every(x => !x)));
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   // A resumed session with no speech must close its tracks and stay paused.
-  await page.getByRole("button", { name: "Start listening", exact: true }).click();
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING");
   // A short noise candidate must not cancel the five-second deadline.
   await page.evaluate(() => { currentRecognition.onspeechstart?.(); currentRecognition.onspeechend?.(); });
@@ -87,7 +115,7 @@ try {
   await page.waitForTimeout(1200);
   assert.equal(await page.evaluate(() => voiceProbe.starts), startsAfterPause);
   assert.ok(await page.evaluate(() => !voiceProbe.recognition && voiceProbe.tracks.every(t => t.readyState === "ended")));
-  await page.getByRole("button", { name: "Continue conversation", exact: true }).evaluate(button => { button.click(); button.click(); button.click(); });
+  await page.getByRole("button", { name: "Continue", exact: true }).evaluate(button => { button.click(); button.click(); button.click(); });
   await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING");
   assert.equal(await page.evaluate(() => voiceProbe.starts), startsAfterPause + 1);
   await page.waitForTimeout(4700);
@@ -100,9 +128,9 @@ try {
   await page.waitForFunction(() => voiceProbe.starts >= 9);
   await page.getByRole("button", { name: "End conversation", exact: true }).click();
   assert.ok(await page.evaluate(() => !voiceProbe.recognition && voiceProbe.tracks.every(t => t.readyState === "ended")));
-  await page.getByRole("button", { name: "Resume conversation", exact: true }).click();
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
   await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING");
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     for (const theme of ["dark", "light"]) {
@@ -130,16 +158,16 @@ try {
   await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "VISION SPEAKING");
   assert.match(await page.locator(".voice-answer").textContent(), /blue rectangular/);
   await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "LISTENING");
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.unroute("**/api/speech");
   await page.route("**/api/speech", route => route.fulfill(speechFails ?
     { status: 503, json: { error: "Unavailable" } } : { contentType: "audio/wav", body: wav }));
   speechFails = true; await type("Describe the cover.");
-  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "VOICE UNAVAILABLE");
+  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "Voice unavailable");
   assert.match(await page.locator(".voice-answer").textContent(), /blue rectangular/);
   assert.ok(await page.evaluate(() => voiceProbe.tracks.every(t => t.readyState === "ended")));
   followUpFails = true; await type("What is its size?");
-  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "FOLLOW UP UNAVAILABLE");
+  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "Answer unavailable");
   assert.equal(await page.locator(".voice-form input").inputValue(), "What is its size?");
   // A hung synthesis also releases the successful text within the 25-second budget.
   followUpFails = false;
@@ -149,7 +177,7 @@ try {
     await route.abort().catch(() => {});
   });
   await type("Describe the notebook.");
-  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "VOICE UNAVAILABLE", null, { timeout: 28000 });
+  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "Voice unavailable", null, { timeout: 28000 });
   assert.match(await page.locator(".voice-answer").textContent(), /blue rectangular/);
   releaseHung();
   // A late successful synthesis must not resurrect a reset object's answer/audio.
@@ -170,11 +198,113 @@ try {
   await page.unroute("**/api/speech");
   await page.route("**/api/speech", route => route.fulfill({ status: 503, json: { error: "Unavailable" } }));
   await page.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
-  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "VOICE UNAVAILABLE");
+  await page.waitForFunction(() => document.querySelector(".voice-state")?.textContent === "Voice unavailable");
   await page.getByRole("button", { name: "End conversation", exact: true }).click();
   assert.equal(await page.locator(".voice-field canvas").count(), 0);
   await page.locator("#reset").click();
   assert.equal(await page.locator(".voice-panel").count(), 0);
   assert.deepEqual(errors, []);
-  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout and failure/reset cleanup.");
+  // Native recogniser that aborts a few milliseconds after start (seen on iOS 26): the
+  // session falls back to recorded clips once, remembers that for the page, and starts
+  // the NEXT conversation on the server path without a native attempt. Desktop user
+  // agent here so the native path is actually tried; iOS itself never tries it now.
+  const abortPage = await context.newPage(); const abortErrors = [];
+  abortPage.on("pageerror", e => abortErrors.push(e.message));
+  await abortPage.addInitScript(() => {
+    localStorage.setItem("ucenth-voice", "on");
+    window.diagLog = []; window.nativeStarts = 0;
+    document.addEventListener("ucenth:voice-diag", e => window.diagLog.push(e.detail));
+    window.SpeechRecognition = class {
+      start() { window.nativeStarts++; setTimeout(() => this.onstart?.(), 0); setTimeout(() => this.onaudiostart?.(), 2); setTimeout(() => this.onerror?.({ error: "aborted" }), 7); }
+      abort() {}
+    };
+  });
+  const replies = [["**/api/identify", { json: identity }], ["**/api/speech", { contentType: "audio/wav", body: wav }], ["**/api/transcribe", { json: { text: "Can you still hear me clearly?" } }], ["**/api/follow-up", { json: { answer: "Yes.", userSuppliedIdentity: "" } }]];
+  for (const [path, reply] of replies) await abortPage.route(path, route => route.fulfill(reply));
+  await abortPage.goto(base);
+  await abortPage.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
+  await abortPage.waitForFunction(() => window.diagLog.some(d => d.event === "fallback" && d.because === "aborted" && d.remembered === true), null, { timeout: 20000 });
+  await abortPage.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context"), null, { timeout: 10000 });
+  assert.equal(await abortPage.evaluate(() => window.nativeStarts), 1);
+  await abortPage.locator("#reset").click();
+  await abortPage.locator("#upload").setInputFiles({ name: "fixture-2.jpg", mimeType: "image/jpeg", buffer: image });
+  await abortPage.waitForFunction(() => window.diagLog.filter(d => d.event === "listen").length >= 3, null, { timeout: 20000 });
+  const listens = await abortPage.evaluate(() => window.diagLog.filter(d => d.event === "listen").map(d => `${d.path}:${d.nativeUnusable}`));
+  assert.deepEqual(listens.slice(-1), ["server:true"], `second conversation skipped the native recogniser (${listens.join(", ")})`);
+  assert.equal(await abortPage.evaluate(() => window.nativeStarts), 1, "no second native attempt on this page");
+  assert.deepEqual(abortErrors, []);
+  await abortPage.close();
+  // iPhone lifecycle under an iPhone user agent: recorded clips from the first turn
+  // (Safari's recogniser is never tried), the keepalive tone while a microphone is
+  // held, a stale stream after Resume replaced by a fresh one, and a silent playback
+  // ending the turn at once with the written answer standing.
+  const iosContext = await browser.newContext({ permissions: ["microphone"], viewport: { width: 390, height: 844 },
+    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1" });
+  const ios = await iosContext.newPage(); const iosErrors = [];
+  ios.on("pageerror", e => iosErrors.push(e.message));
+  await ios.addInitScript(() => {
+    localStorage.setItem("ucenth-voice", "on");
+    window.diagLog = []; window.nativeStarts = 0; window.silentNext = false; window.micCalls = 0;
+    document.addEventListener("ucenth:voice-diag", e => window.diagLog.push(e.detail));
+    // After an idle period iOS can hand back a live, unmuted track that carries only
+    // digital zeros. One call can be made to behave that way from the test.
+    const realMic = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async options => {
+      window.micCalls++;
+      if (window.silentNext) { window.silentNext = false; return new AudioContext().createMediaStreamDestination().stream; }
+      return realMic(options);
+    };
+    window.SpeechRecognition = class { start() { window.nativeStarts++; } abort() {} };
+  });
+  for (const [path, reply] of replies) await ios.route(path, route => route.fulfill(reply));
+  await ios.goto(base);
+  await ios.locator("#upload").setInputFiles({ name: "fixture.jpg", mimeType: "image/jpeg", buffer: image });
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "listen"), null, { timeout: 20000 });
+  assert.equal(await ios.evaluate(() => window.diagLog.find(d => d.event === "listen").path), "server", "iOS starts on recorded clips");
+  assert.equal(await ios.evaluate(() => window.nativeStarts), 0, "Safari's recogniser is never started on iOS");
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "audio-context"), null, { timeout: 10000 });
+  assert.ok(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context").every(d => ["before", "after", "resumed"].every(k => k in d))), "audio-context diagnostics carry before/after/resumed");
+  await ios.waitForFunction(() => ["LISTENING", "USER SPEAKING"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 10000 });
+  // The keepalive tone runs only while the recorded-clip path holds a microphone.
+  const order = await ios.evaluate(() => ({ keepalive: window.diagLog.findIndex(d => d.event === "keepalive" && d.on === true), microphone: window.diagLog.findIndex(d => d.event === "microphone") }));
+  assert.ok(order.keepalive >= 0 && order.keepalive < order.microphone, `keepalive started before the microphone was attached (${JSON.stringify(order)})`);
+  await ios.getByRole("button", { name: "End conversation", exact: true }).click();
+  await ios.waitForFunction(() => document.querySelector(".voice-panel")?.dataset.state === "CONVERSATION_ENDED");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "keepalive").at(-1).on), false, "keepalive released with the microphone");
+  // Resume with a stale microphone: silent probe, fresh stream, live signal; no rebuild.
+  const micCallsBefore = await ios.evaluate(() => window.micCalls);
+  await ios.evaluate(() => { window.silentNext = true; });
+  await ios.getByRole("button", { name: "Resume", exact: true }).click();
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "microphone.silent") && window.diagLog.some(d => d.event === "microphone.signal"), null, { timeout: 15000 });
+  const recovery = await ios.evaluate(() => window.diagLog.filter(d => ["microphone.silent", "microphone.signal", "audio-context.recreated"].includes(d.event)).map(d => d.event));
+  assert.deepEqual(recovery.slice(-2), ["microphone.silent", "microphone.signal"], `silent probe then a live signal, nothing rebuilt (${recovery.join(", ")})`);
+  assert.equal(await ios.evaluate(() => window.micCalls), micCallsBefore + 2, "a fresh stream was requested after the stale one");
+  assert.ok(await ios.evaluate(() => window.diagLog.find(d => d.event === "microphone.signal").peak > 0));
+  assert.ok(["LISTENING", "USER SPEAKING"].includes(await ios.locator(".voice-state").textContent()), "listening continues on the recovered microphone");
+  // Stalled output (seen physically on iOS 18.6 after Safari's recogniser had run): the
+  // context says running but renders zeros. The next answer's playback is made silent;
+  // the probe must end the turn at once, keep the written answer, and listen again.
+  await ios.evaluate(() => {
+    window.silentPlaybacks = 1; // the next buffer source plays a zero buffer
+    const create = AudioContext.prototype.createBufferSource;
+    AudioContext.prototype.createBufferSource = function () {
+      const source = create.call(this);
+      const descriptor = Object.getOwnPropertyDescriptor(AudioBufferSourceNode.prototype, "buffer");
+      Object.defineProperty(source, "buffer", { set(buffer) {
+        if (window.silentPlaybacks > 0) { window.silentPlaybacks--; buffer = this.context.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate); }
+        descriptor.set.call(this, buffer);
+      }, get() { return descriptor.get.call(this); } });
+      return source;
+    };
+  });
+  await ios.locator(".voice-typed").evaluate(node => node.open = true);
+  await ios.getByRole("textbox", { name: "Question about the scanned object" }).fill("Say that again.");
+  await ios.getByRole("button", { name: "Send" }).click();
+  await ios.waitForFunction(() => window.diagLog.some(d => d.event === "playback.silent"), null, { timeout: 15000 });
+  await ios.waitForFunction(() => ["LISTENING", "USER SPEAKING", "OPENING MICROPHONE"].includes(document.querySelector(".voice-state")?.textContent), null, { timeout: 15000 });
+  assert.equal(await ios.locator(".voice-answer").textContent(), "Yes.", "the written answer stands");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "playback.silent").length), 1, "the silent probe fired once");
+  assert.equal(await ios.evaluate(() => window.diagLog.filter(d => d.event === "audio-context.recreated").length), 0, "no context rebuild on iOS");
+  assert.deepEqual(iosErrors, []);
+  console.log("Voice Chrome checks passed: five mock turns, original image, bounded history, no mic/playback overlap, themes/layout, failure/reset cleanup, native-abort memory, iOS recorded-clip path, keepalive, stale-microphone recovery and silent-playback ending.");
 } finally { await browser.close(); }

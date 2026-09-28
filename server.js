@@ -19,7 +19,7 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
-import { createGeminiDetector } from "./lib/gemini.js";
+import { createGeminiDetector, failureReason } from "./lib/gemini.js";
 import { createVoiceRoutes } from "./lib/voice-routes.js";
 import { createDocumentRoute } from "./lib/document-routes.js";
 
@@ -35,6 +35,8 @@ const types = {
   "/style.css": "text/css",
   "/script.js": "text/javascript",
   "/lib/stability.js": "text/javascript",
+  "/lib/viewport-guide.js": "text/javascript",
+  "/lib/transcript.js": "text/javascript",
   "/voice.js": "text/javascript",
   "/voice.css": "text/css",
   "/lib/particle-presence.js": "text/javascript",
@@ -61,11 +63,40 @@ const json = (res, status, data) => {
  * exercise the real routes with fakes and no billing. The route order is: static files,
  * health, conversation routes, document route, then the identification route below.
  */
-export function createServer({ identify, followUp, synthesize, analyzeDocument } = {}) {
+export const LOCAL_GUARDS = {
+  identify: { perMinute: 6, concurrent: 1 },
+  followUp: { perMinute: 12, concurrent: 1 },
+  speech: { perMinute: 18, concurrent: 1 },
+  transcribe: { perMinute: 12, concurrent: 1 },
+  document: { perMinute: 6, concurrent: 1 },
+};
+export function createServer({
+  identify,
+  followUp,
+  synthesize,
+  transcribe,
+  analyzeDocument,
+  // Hosts this server answers to. The educational server is a personal local tool,
+  // so only localhost is accepted; a hosted deployment passes its own pattern.
+  allowedHosts = /^(localhost|127\.0\.0\.1)(:\d+)?$/,
+  // Document limits are injectable so a public deployment can choose smaller ones.
+  documentLimits,
+  // Optional hook that runs before routing. It may answer the request itself and
+  // return true, or return false to let the normal routes continue.
+  before,
+  // Local guards protect the developer's own bill: one active cloud request per
+  // route and a few attempts per minute. A hosted deployment supplies larger values
+  // and its own visitor-level limits.
+  guards = LOCAL_GUARDS,
+} = {}) {
   const identifyOriginal = identify || createGeminiDetector();
-  const voiceRoutes = createVoiceRoutes({ followUp, synthesize });
-  const documentRoute = createDocumentRoute(analyzeDocument ? { analyze: analyzeDocument } : {});
-  let busy = false;
+  const voiceRoutes = createVoiceRoutes({ followUp, synthesize, ...(transcribe ? { transcribe } : {}), guards });
+  const documentRoute = createDocumentRoute({
+    ...(analyzeDocument ? { analyze: analyzeDocument } : {}),
+    ...(documentLimits ? { limits: documentLimits } : {}),
+    guard: guards.document,
+  });
+  let active = 0;
   let requests = [];
   return http.createServer(async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
@@ -78,10 +109,14 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
       "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
     );
     const host = req.headers.host;
-    if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || ""))
-      return json(res, 403, { error: "Only local access is allowed." });
+    if (!allowedHosts.test(host || ""))
+      return json(res, 403, { error: "This host is not served here." });
     // how-to:end local-boundary
-    const pathname = new URL(req.url, `http://${host}`).pathname;
+    // Behind a TLS-terminating proxy the browser's origin is https://host; locally it is http.
+    const scheme = req.headers["x-forwarded-proto"] === "https" ? "https" : "http";
+    const origin = `${scheme}://${host}`;
+    const pathname = new URL(req.url, origin).pathname;
+    if (before && (await before(req, res, { pathname, origin }))) return;
     if (req.method === "GET" && types[pathname]) {
       try {
         res.setHeader("Content-Type", types[pathname] + "; charset=utf-8");
@@ -100,15 +135,15 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
     }
     if (req.method === "GET" && pathname === "/api/health")
       return json(res, 200, { ok: true, provider: "Gemini 3.8 Flash vision" });
-    if (req.method === "POST" && ["/api/follow-up", "/api/speech"].includes(pathname))
-      return voiceRoutes(req, res, pathname, host);
+    if (req.method === "POST" && ["/api/follow-up", "/api/speech", "/api/transcribe"].includes(pathname))
+      return voiceRoutes(req, res, pathname, origin);
     if (req.method === "POST" && pathname === "/api/document")
-      return documentRoute(req, res, host);
+      return documentRoute(req, res, origin);
     if (req.method !== "POST" || pathname !== "/api/identify")
       return json(res, 404, { error: "Not found." });
         // Same-origin only. Together with Sec-Fetch-Site this stops another website in the
         // same browser from spending this machine's Gemini quota.
-    if (req.headers.origin && req.headers.origin !== `http://${host}`)
+    if (req.headers.origin && req.headers.origin !== origin)
       return json(res, 403, {
         error: "This request must come from the local scanner.",
       });
@@ -117,18 +152,18 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
     if (!/^application\/json(?:;|$)/i.test(req.headers["content-type"] || ""))
       return json(res, 415, { error: "Send a JSON image payload." });
     // Prevent overlapping billable scans; count attempts only after image validation.
-    if (busy)
+    if (active >= guards.identify.concurrent)
       return json(res, 409, {
         error: "A scan is already running. Please wait.",
       });
     requests = requests.filter((t) => Date.now() - t < 60000);
-    if (requests.length >= 6) {
+    if (requests.length >= guards.identify.perMinute) {
       res.setHeader("Retry-After", "60");
       return json(res, 429, {
         error: "Scan limit reached. Wait one minute before trying again.",
       });
     }
-    busy = true;
+    active++;
     let called = false;
     const started = Date.now();
     try {
@@ -196,7 +231,7 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
         /credentials|authentication|ENOENT/i.test(error.message || "");
       const quota = [8, 429].includes(code);
       console.error(
-        `Identification request failed (${auth ? "authentication" : quota ? "quota" : "upstream"}).`,
+        `Identification request failed (${auth ? "authentication" : quota ? "quota" : "upstream"}; ${failureReason(error)}).`,
       );
       return json(res, quota ? 429 : auth ? 503 : 502, {
         error: quota
@@ -206,7 +241,7 @@ export function createServer({ identify, followUp, synthesize, analyzeDocument }
             : "Identification could not complete. Please try again shortly.",
       });
     } finally {
-      busy = false;
+      active--;
       if (called)
         console.log(
           `Identification attempt finished in ${Date.now() - started} ms.`,

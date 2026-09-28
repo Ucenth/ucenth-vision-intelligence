@@ -4,7 +4,9 @@
 
 The existing scanner owns camera permission, stability, countdown, capture, the visual scan treatment and identification. Its original unmodified JPEG is sent to `/api/identify`. The identification prompt and parser remain in `lib/identity-prompt.js` and `lib/gemini.js`.
 
-`script.js` emits `ucenth:result-presented` with the identification and `ucenth:scan-reset` on reset. `voice.js` uses those events and a read-only copy of the preserved capture to attach conversation. The original confirmation chime exposes a completion promise so Charon's introduction follows it without changing the chime.
+`script.js` emits `ucenth:result-presented` with the identification and `ucenth:scan-reset` on reset. `voice.js` uses those events and a read-only copy of the preserved capture to attach conversation.
+
+`lib/viewport-guide.js` moves the viewport on the single-column (phone) layout for exactly two transitions: a live camera after Open Camera, and a rendered result. A transition is armed by the person's action and fulfilled only when the destination exists; a manual scroll while it is pending cancels it, a focused text field suppresses it, reduced motion makes it instant, the layout is read from the workspace grid, and the header offset is a CSS `scroll-margin-top`. Focus is never moved. Decisions are announced as `ucenth:viewport-guide`. The original confirmation chime exposes a completion promise so Charon's introduction follows it without changing the chime.
 
 Conversation states are LISTENING → USER_SPEAKING → THINKING → VISION_SPEAKING → IDLE → LISTENING. User controls and failures have explicit states. Interim browser transcripts appear near the particle field. A final transcript submits one question. THINKING includes both Gemini generation and Charon preparation. The answer is held internally until decoded audio is ready, then revealed immediately before playback. A speech failure or 25-second preparation timeout reveals the successful text answer instead.
 

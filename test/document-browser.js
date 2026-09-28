@@ -113,7 +113,7 @@ try {
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.evaluate(() => (document.documentElement.dataset.theme = "dark"));
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.locator("#reset").click();
   assert.equal(await page.locator("#document-stage").count(), 0);
   assert.equal(await page.locator(".voice-panel").count(), 0);
@@ -132,7 +132,7 @@ try {
   assert.equal(await page.locator(".document-nav").count(), 0);
   await listening();
   assert.equal(speech.at(-1), receipt.conversationIntro);
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.locator("#reset").click();
   // Objects keep the object presentation.
   identity = identityObject;

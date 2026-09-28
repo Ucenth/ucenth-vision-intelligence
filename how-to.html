@@ -572,6 +572,13 @@ return remaining &gt; 0
   .getContext("2d")
   .drawImage(source, ...region, 0, 0, capture.width, capture.height);
 const image = capture.toDataURL("image/jpeg", 0.88);
+mark("capture-encoded", {
+  width: capture.width,
+  height: capture.height,
+  sourceWidth: region[2],
+  sourceHeight: region[3],
+  bytes: Math.round((image.length - 23) * 0.75),
+});
 capture.hidden = false;
 video.hidden = true;
 $("empty-state").hidden = true;
@@ -585,6 +592,7 @@ const pendingResponse = fetch("/api/identify", {
   body: JSON.stringify({ image }),
   signal: controller.signal,
 });
+mark("upload-start");
 pendingResponse.catch(() =&gt; {}); // Still awaited below; avoid an unhandled rejection if an effect throws.
 stopStream();</code></pre>
             </div>
@@ -667,30 +675,33 @@ client ||= new GoogleGenAI({
             <p>The server decodes the upload to prove it is a real image, then sends the original bytes to Gemini with the prompt and schema.</p>
             <div class="command" data-source-example="gemini-request">
               <span class="file">lib/gemini.js · createGeminiDetector()</span>
-              <pre><code>const response = await client.models.generateContent({
-  model: "gemini-3.8-flash",
-  contents: [
-    {
-      role: "user",
-      parts: [
-        {
-          text: `${prompt} Do not use external search; evidence_urls must be empty. Keep likely_product at the broader family when the exact model is uncertain. Do not infer publisher, ingredients, performance specifications or other facts absent from the image.`,
-        },
-        { inlineData: { mimeType, data: content.toString("base64") } },
-      ],
+              <pre><code>const response = await withOneRetry(() =&gt;
+  client.models.generateContent({
+    model: "gemini-3.8-flash",
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            text: `${prompt} Do not use external search; evidence_urls must be empty. Keep likely_product at the broader family when the exact model is uncertain. Do not infer publisher, ingredients, performance specifications or other facts absent from the image.`,
+          },
+          { inlineData: { mimeType, data: content.toString("base64") } },
+        ],
+      },
+    ],
+    config: {
+      systemInstruction,
+      responseMimeType: "application/json",
+      responseJsonSchema: schema,
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+      thinkingConfig: { thinkingLevel: "LOW" },
     },
-  ],
-  config: {
-    systemInstruction,
-    responseMimeType: "application/json",
-    responseJsonSchema: schema,
-    temperature: 0.1,
-    maxOutputTokens: 4096,
-    thinkingConfig: { thinkingLevel: "LOW" },
-  },
-});
-if (response.candidates?.[0]?.finishReason !== "STOP")
-  throw new Error("Incomplete identity response");
+  }),
+);
+const finishReason = response.candidates?.[0]?.finishReason;
+if (finishReason !== "STOP")
+  throw new Error(`Incomplete identity response (${finishReason || "no candidate"})`);
 return summarizeIdentity(JSON.parse(response.text));</code></pre>
             </div>
             <h4>What happens next</h4>
@@ -699,6 +710,14 @@ return summarizeIdentity(JSON.parse(response.text));</code></pre>
               schema and applies cautious naming rules before the browser sees anything.
               The route wraps failures into safe messages; provider error text never
               reaches the page.
+            </p>
+            <p>
+              <strong>One retry, and only a fast one:</strong>
+              <code>withOneRetry()</code> repeats the call once when Gemini answers
+              quickly with 429 or a 5xx (measured on real phones: an occasional
+              <em>500 Internal error</em> within a few seconds). A failure that arrives
+              late is not retried, so nobody waits for two full timeouts, and the SDK's
+              own retries stay off so a hung request cannot bill twice.
             </p>
             <p>
               <strong>Asynchronous requests:</strong> identification takes 3–8 seconds.
@@ -981,6 +1000,19 @@ recognition.lang = "en-US";
 recognition.interimResults = true;
 recognition.continuous = true;</code></pre>
             </div>
+            <div class="callout why">
+              <strong>Why phones hand the microphone to the recogniser alone</strong>
+              <p>
+                Desktop Chrome tolerates a second <code>getUserMedia()</code> stream (for the
+                particle analyser) alongside SpeechRecognition. Android and iOS do not: the
+                recogniser then hears nothing or fails. So on phones <code>listenNative()</code>
+                opens no stream and the particles use a restrained listening pulse driven by
+                recognition events. Browsers without a usable native recogniser (iOS Chrome,
+                some Safari sessions) record a short clip with MediaRecorder and send it to
+                <code>/api/transcribe</code>, where Gemini transcribes it in memory; the loop
+                and the interface stay identical.
+              </p>
+            </div>
             <p>
               Speech is confirmed by the recognizer's own classifier (held for 200 ms)
               or by a transcript, never by microphone volume, so a loud room does not
@@ -1047,29 +1079,68 @@ return Buffer.from(response.data.audioContent, "base64");</code></pre>
               <span class="file">voice.js · speak()</span>
               <pre><code>activate(c);
 stopMic(c);
-c.outputAnalyser = audioContext.createAnalyser();
-c.outputAnalyser.fftSize = 2048;
-c.outputAnalyser.smoothingTimeConstant = 0.65;
-c.outputAnalyser.connect(audioContext.destination);
-c.playback = audioContext.createBufferSource();
-c.playback.buffer = audio;
-c.playback.connect(c.outputAnalyser);
-c.particles.connect(c.outputAnalyser, "charon");
-c.playback.onended = () =&gt; {
-  if (!valid(c, turn)) return;
-  c.playback.disconnect();
-  c.playback = null;
-  c.outputAnalyser?.disconnect();
-  c.outputAnalyser = null;
-  c.particles.disconnect();
-  returnToListening(c, turn);
+setAudioSession("playback");
+const play = (buffer) =&gt; {
+  c.outputAnalyser = audioContext.createAnalyser();
+  c.outputAnalyser.fftSize = 2048;
+  c.outputAnalyser.smoothingTimeConstant = 0.65;
+  c.outputAnalyser.connect(audioContext.destination);
+  c.playback = audioContext.createBufferSource();
+  c.playback.buffer = buffer;
+  c.playback.connect(c.outputAnalyser);
+  c.particles.connect(c.outputAnalyser, "charon");
+  c.playback.onended = () =&gt; {
+    if (!valid(c, turn)) return;
+    c.playback.disconnect();
+    c.playback = null;
+    c.outputAnalyser?.disconnect();
+    c.outputAnalyser = null;
+    c.particles.disconnect();
+    mark("playback-end");
+    returnToListening(c, turn);
+  };
+  c.playback.start();
 };
 c.ui.answer.textContent = text;
 c.pendingAnswer = null;
 state(c, "VISION_SPEAKING");
-c.ui.notice.textContent =
-  "Charon speaking · Microphone and speech recognition are stopped.";
-c.playback.start();</code></pre>
+play(audio);
+mark("playback-start", { contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none" });
+// Output probe: iOS can leave a context that says "running" but renders nothing
+// (seen physically: answer shown, no sound, playback never ending). A short way
+// into playback the analyser must show signal; exact zeros end the turn at once so
+// the written answer stands and listening continues, instead of a silent wait.
+const probeAt = Math.min(600, Math.max(120, audio.duration * 500));
+const probe = () =&gt; {
+  c.playbackProbe = setTimeout(async () =&gt; {
+    if (!valid(c, turn) || !c.playback || !c.outputAnalyser) return;
+    const data = new Float32Array(c.outputAnalyser.fftSize);
+    c.outputAnalyser.getFloatTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += v * v;
+    const rms = Math.sqrt(sum / data.length);
+    diag("playback", { rms: +rms.toFixed(4), contextState: audioContext.state, audioSession: navigator.audioSession?.type || "none", probeAt: Math.round(probeAt), recovered: c.playbackRecovered });
+    if (rms &gt; 0 || c.playbackRecovered) return;
+    // Nothing is being rendered. Rebuilding the context is not an option here (a
+    // context created outside a tap stays suspended on iOS until the next tap), so
+    // the written answer stands, the turn ends now instead of after a silent clip,
+    // and listening continues.
+    c.playbackRecovered = true;
+    diag("playback.silent", { contextState: audioContext.state });
+    c.playback.onended = null;
+    try {
+      c.playback.stop();
+    } catch {}
+    c.playback.disconnect();
+    c.playback = null;
+    c.outputAnalyser.disconnect();
+    c.outputAnalyser = null;
+    c.particles.disconnect();
+    mark("playback-end", { silent: true });
+    returnToListening(c, turn);
+  }, probeAt);
+};
+probe();</code></pre>
             </div>
             <h4>The five-second timeout</h4>
             <p>
@@ -1203,11 +1274,13 @@ raw = [
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
 );
 const host = req.headers.host;
-if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host || ""))
-  return json(res, 403, { error: "Only local access is allowed." });</code></pre>
+if (!allowedHosts.test(host || ""))
+  return json(res, 403, { error: "This host is not served here." });</code></pre>
             </div>
             <p>
-              <strong>CORS, briefly:</strong> browsers block cross-origin requests by
+              <code>allowedHosts</code> defaults to localhost; a hosted deployment passes its own
+              pattern, and the scheme (http locally, https behind a proxy) comes from the
+              request, so the same code serves both. <strong>CORS, briefly:</strong> browsers block cross-origin requests by
               default, and this server sends no <code>Access-Control-Allow-Origin</code>
               header, so a page on another origin cannot read its responses. The
               Origin and Sec-Fetch-Site checks add a second layer.

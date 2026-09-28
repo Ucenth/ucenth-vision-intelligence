@@ -10,7 +10,7 @@
     "start": "node --use-system-ca --env-file=.env server.js",
     "dev": "node --use-system-ca --env-file=.env --watch server.js",
     "test": "node --test test/*.test.js",
-    "test:browser": "node test/browser.js && node test/how-to-browser.js && node test/appearance-browser.js && node test/responsive-browser.js && node test/audio-browser.js && node test/voice-browser.js && node test/person-browser.js && node test/document-browser.js",
+    "test:browser": "node test/browser.js && node test/how-to-browser.js && node test/appearance-browser.js && node test/responsive-browser.js && node test/audio-browser.js && node test/voice-browser.js && node test/person-browser.js && node test/document-browser.js && node test/guide-browser.js",
     "test:real": "node test/identify-image.js",
     "test:person": "node test/person-context.js",
     "test:document": "node test/document-real.js",
@@ -23,10 +23,10 @@
     "google-auth-library": "^10.5.0",
     "mammoth": "^1.13.0",
     "pdfjs-dist": "^6.3.289",
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "jszip": "^3.10.2"
   },
   "devDependencies": {
-    "jszip": "^3.10.2",
     "playwright": "^1.58.0"
   },
   "description": "Open-source UCENTH Vision Intelligence by Universal Central Host - UCENTH: object, person-context and document intelligence with hands-free voice conversation",

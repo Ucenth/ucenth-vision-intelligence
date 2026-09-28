@@ -70,7 +70,7 @@ try {
     assert.ok(await page.locator(".identity-basis").isVisible());
   }
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.locator("#reset").click();
   identity = detected;
   await upload();
@@ -102,7 +102,7 @@ try {
   assert.equal(await text(".identity-name"), "Person", "user context never rewrites the verified result");
   await page.screenshot({ path: `${artifact}/detected-1440.png`, fullPage: true });
   await listening();
-  await page.getByRole("button", { name: "Pause microphone", exact: true }).click();
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.locator("#reset").click();
   identity = object;
   await upload();

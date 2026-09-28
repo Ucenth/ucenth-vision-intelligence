@@ -38,6 +38,8 @@ try {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       const errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
+      // Voice off (set before navigation so voice.js reads it on load) keeps the object result layout; voice-browser.js covers the conversation keeps the object result layout; voice-browser.js covers the conversation layout.
+      await page.addInitScript(() => localStorage.setItem("ucenth-voice", "off"));
       await page.goto(base);
       if (theme === "light") await page.locator("#theme-toggle").click();
       const idle = (await page.locator(".workspace").boundingBox()).height;
@@ -47,8 +49,6 @@ try {
         animations: "disabled",
       });
       let response = eucerin;
-      // Voice off keeps the object result layout; voice-browser.js covers the conversation layout.
-      await page.addInitScript(() => localStorage.setItem("ucenth-voice", "off"));
       await page.route("**/api/identify", (route) =>
         route.fulfill({
           status: response.error ? 502 : 200,

@@ -78,3 +78,29 @@ test("Gemini receives original captured bytes and MIME, never a transformed imag
     await new Promise((r) => server.close(r));
   }
 });
+
+test("withOneRetry retries one fast retryable failure only, and failureReason never quotes provider text", async () => {
+  const { withOneRetry, failureReason, RETRY_AFTER_MS } = await import("../lib/gemini.js");
+  let calls = 0;
+  const flaky = async () => {
+    calls++;
+    if (calls === 1) throw Object.assign(new Error("Internal error encountered."), { status: 500 });
+    return "ok";
+  };
+  const started = Date.now();
+  assert.equal(await withOneRetry(flaky), "ok");
+  assert.equal(calls, 2);
+  assert.ok(Date.now() - started >= RETRY_AFTER_MS - 20, "waits before the second attempt");
+  // A 400 (bad request) is not retried: it would fail again and bill twice.
+  calls = 0;
+  await assert.rejects(withOneRetry(async () => { calls++; throw Object.assign(new Error("bad"), { status: 400 }); }), /bad/);
+  assert.equal(calls, 1);
+  // Only the one retry: two consecutive 503s surface the second one.
+  calls = 0;
+  await assert.rejects(withOneRetry(async () => { calls++; throw Object.assign(new Error("busy"), { status: 503 }); }), /busy/);
+  assert.equal(calls, 2);
+  assert.equal(failureReason({ status: 503, message: "secret request detail" }), "HTTP 503");
+  assert.equal(failureReason(new Error("Incomplete transcription (MAX_TOKENS)")), "Incomplete transcription (MAX_TOKENS)");
+  assert.equal(failureReason(Object.assign(new Error("secret request detail"), { name: "AbortError" })), "AbortError");
+  assert.equal(failureReason(new Error("secret request detail")), "Error");
+});

@@ -25,3 +25,13 @@ const failed=await post(base,"/api/speech",{text:"fail"});assert.equal(failed.st
 assert.equal((await fetch(base+"/lib/conversation.js")).status,404);
 });});
 test("follow-up upstream errors do not expose provider details",async()=>{await serve({followUp:async()=>{throw Error("sensitive-provider-detail");}},async base=>{const result=await post(base,"/api/follow-up",payload);assert.equal(result.status,502);assert.doesNotMatch(await result.text(),/sensitive-provider-detail/);});});
+test("transcribe route accepts a short clip, bounds size and type, and never exposes provider details",async()=>{
+await serve({transcribe:async(audio,mime)=>{assert.equal(mime,"audio/webm");assert.equal(audio.length,4000);return "what is the total";}},async base=>{
+const clip=Buffer.alloc(4000,1);
+const ok=await fetch(base+"/api/transcribe",{method:"POST",headers:{"Content-Type":"audio/webm;codecs=opus"},body:clip});assert.equal(ok.status,200);assert.equal((await ok.json()).text,"what is the total");
+assert.equal((await fetch(base+"/api/transcribe",{method:"POST",headers:{"Content-Type":"text/plain"},body:clip})).status,415);
+assert.equal((await fetch(base+"/api/transcribe",{method:"POST",headers:{"Content-Type":"audio/mp4"},body:Buffer.alloc(100)})).status,400);
+assert.equal((await fetch(base+"/api/transcribe",{method:"POST",headers:{"Content-Type":"audio/webm"},body:Buffer.alloc(1.6*1024*1024)})).status,413);
+});
+await serve({transcribe:async()=>{throw Error("sensitive-provider-detail");}},async base=>{const r=await fetch(base+"/api/transcribe",{method:"POST",headers:{"Content-Type":"audio/webm"},body:Buffer.alloc(4000,1)});assert.equal(r.status,502);assert.doesNotMatch(await r.text(),/sensitive-provider-detail/);});
+});
