@@ -128,6 +128,46 @@ Do not change DNS until staging has passed acceptance over HTTPS. Google's curre
 3. After the certificate becomes ACTIVE (up to an hour after DNS propagates), set `PUBLIC_ORIGIN=https://vision.ucenth.com`, redeploy, and re-run the HTTPS acceptance list.
 4. Keep the `*.run.app` URL unpublished; the `allowedHosts` pattern accepts both.
 
+## Staging results (28 September 2026)
+
+Staging service: `vision-intelligence-staging` in `europe-west2`, source-deployed with buildpacks (no Docker), 1 vCPU / 1 GiB, concurrency 8, timeout 120 s, min 0 / max 3 instances, Firestore quota store, cookie secret from Secret Manager. Not connected to any domain.
+
+**HTTPS acceptance** (real Chrome with fake camera/microphone devices, real Gemini and Charon): page load, camera permission and live stream, microphone permission, object identification, Charon introduction, five-second speech-start timeout (5008 ms), typed follow-up answered by Charon, particles reacting to Charon output and microphone, allowance line decreasing, light and dark themes, phone layout, PDF and DOCX analysis, contextual person identification from page context, French receipt translated with Original / English tabs, sixth request refused with the wait time, allowance consistent on a fresh read. Live speech recognition needs a real microphone and a person; the loop was driven by a stub, so a two-minute manual spoken check on the staging URL is the one remaining HTTPS item.
+
+**Measured latency** (server side, from Cloud Run request logs and the app's own timings):
+
+| Request | Typical |
+|---|---|
+| Health / static (warm) | 20–80 ms server; 0.7–0.9 s from a laptop on a corporate network |
+| Cold start (new revision, first request) | startup p99 1.9–3.3 s; first request 1.1–1.3 s |
+| Identification (Gemini) | 3.4–4.7 s |
+| Follow-up answer (Gemini) | 3.7 s |
+| Charon synthesis | 1.6–4.2 s |
+| PDF (one page, text) / DOCX | 4.1 s / 3.2 s |
+| Photographed French receipt with translation | 5.2 s |
+
+**Resources.** Real work at 1 GiB peaked at 17 % memory (about 175 MiB) and 8 % CPU (p99). The stubbed-AI load service at 512 MiB peaked at 28 % memory and 9 % CPU. Recommendation: start at **1 vCPU / 512 MiB, concurrency 8** for the first public release (2.9× headroom over the measured peak); move to 1 GiB if 10-page scanned PDFs push memory above 60 %. `min-instances=0`: a cold start costs the first visitor about one to three seconds after an idle period, which is acceptable for a link opened from a video; keep 0 until traffic shows sustained gaps.
+
+**Load** (separate stubbed-AI service, no Gemini traffic; 20 fresh visitors each firing 7 identification requests at once, twice, at 512 MiB and 1 GiB): every visitor ended with exactly 5 accepted and 2 refused, no over-charging and no inconsistency between the response headers and a fresh allowance read; health checks never failed; server-side p50 76 ms for accepted requests and 19 ms for refusals; one instance absorbed 140 concurrent requests without scaling. The earlier iteration of this test found and fixed two real problems: the educational core's six-per-minute instance guard (now injectable) and a hot per-address document (now atomic hourly counters). A single laptop reaches the per-address thresholds quickly; real users behind one carrier address do not, because each can only spend five credits per five hours.
+
+**Cost estimate** (assumptions labelled; verify against current price lists before launch):
+
+| Item | Assumption |
+|---|---|
+| Session mix | 1 identification (1.9k in / 0.5k out tokens), 2 follow-ups (2k in / 0.15k out each), 0.3 document analyses (2.5k in / 0.7k out), 3 Charon syntheses (≈1,050 characters) |
+| Gemini 3.8 Flash | $0.30 per 1M input tokens, $2.50 per 1M output tokens |
+| Cloud Text-to-Speech HD voice | $30 per 1M characters |
+| Cloud Run | request-based billing, 1 vCPU / 512 MiB, about 24 vCPU-seconds per session while waiting on Google; free tier ignored |
+| Firestore, Secret Manager, egress | within free tiers at these volumes |
+
+| Sessions / month | Gemini | Charon | Cloud Run | Total |
+|---|---|---|---|---|
+| 100 | $0.45 | $3.15 | $0.06 | ≈ $3.70 |
+| 1,000 | $4.50 | $31.50 | $0.60 | ≈ $37 |
+| 10,000 | $45 | $315 | $6 | ≈ $370 |
+
+Charon is the cost lever, not Gemini: spoken text is billed per character. The $20–30 budget alert corresponds to roughly 600–800 sessions a month at this mix; shortening introductions or capping speech characters per answer changes the picture more than anything else. Turnstile is free at this scale.
+
 ## Operations
 
 - **Logs:** filter by `jsonPayload.type` (identify, document, follow-up, speech) and `jsonPayload.quota` (charged, refunded, exhausted, busy, flagged, paused).

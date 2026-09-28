@@ -28,10 +28,16 @@ try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("response", (r) => { if (r.url().includes("/api/")) trail.push(`${r.request().method()} ${new URL(r.url()).pathname} ${r.status()} remaining=${r.headers()["x-quota-remaining"]}`); });
-  await page.addInitScript(() => { localStorage.setItem("ucenth-voice", "on"); window.SpeechRecognition = class { start() {} abort() { this.onend?.(); } }; });
+  await page.addInitScript(() => {
+    localStorage.setItem("ucenth-voice", "on");
+    window.SpeechRecognition = class { start() {} abort() { this.onend?.(); } };
+    // Headless Chrome may expose navigator.share with a dialog that never resolves;
+    // force the clipboard / link fallback so the share check is deterministic.
+    Object.defineProperty(navigator, "share", { value: undefined, configurable: true });
+  });
   await page.goto(base);
   const quota = page.locator(".hosted-quota");
-  await page.waitForFunction(() => /free requests remaining/.test(document.querySelector(".hosted-quota")?.textContent || ""));
+  await page.waitForFunction(() => /free requests remaining/.test(document.querySelector(".hosted-quota")?.textContent || ""), null, { timeout: 30000 });
   assert.equal(await quota.textContent(), `${LIMIT} of ${LIMIT} free requests remaining · 5-hour allowance`);
   assert.equal(await page.locator(".hosted-source h2").textContent(), "Learn how it works. Build your own.");
   const download = await page.request.get(`${base}/download/ucenth-vision-intelligence-source.zip`);
