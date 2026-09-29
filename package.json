@@ -10,7 +10,7 @@
     "start": "node --use-system-ca --env-file=.env server.js",
     "dev": "node --use-system-ca --env-file=.env --watch server.js",
     "test": "node --test test/*.test.js",
-    "test:browser": "node test/browser.js && node test/how-to-browser.js && node test/appearance-browser.js && node test/responsive-browser.js && node test/audio-browser.js && node test/voice-browser.js && node test/person-browser.js && node test/document-browser.js && node test/guide-browser.js",
+    "test:browser": "node test/browser.js && node test/how-to-browser.js && node test/appearance-browser.js && node test/responsive-browser.js && node test/audio-browser.js && node test/voice-browser.js && node test/person-browser.js && node test/document-browser.js && node test/guide-browser.js && node test/globe-browser.js",
     "test:real": "node test/identify-image.js",
     "test:person": "node test/person-context.js",
     "test:document": "node test/document-real.js",

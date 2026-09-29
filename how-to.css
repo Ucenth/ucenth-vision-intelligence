@@ -79,12 +79,11 @@ input:focus-visible {
   column-gap: 12px;
   align-items: center;
 }
-/* The approved mark, contained on its own dark surface, beside the wordmark. */
+/* The living globe (lib/globe.js) beside the wordmark. */
 .brand-mark {
   grid-row: 1 / span 2;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
 }
 .brand small {
   display: block;
