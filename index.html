@@ -64,6 +64,7 @@
       inline scripts or third-party CDNs are used anywhere in the app.
     -->
     <script src="appearance.js"></script>
+    <script type="module" src="/lib/globe.js"></script>
     <script type="module" src="/script.js"></script>
     <script type="module" src="/voice.js"></script>
     <script type="module" src="/document.js"></script>
@@ -76,7 +77,7 @@
     -->
     <header class="masthead">
       <a class="brand" href="/" aria-label="UCENTH home"
-        ><img class="brand-mark" src="/public/assets/brand/mark-64.png" width="32" height="32" alt="" decoding="async" />UCENTH<span
+        ><canvas class="brand-mark brand-globe" width="64" height="64" aria-hidden="true"></canvas>UCENTH<span
           class="brand-caption"
           >UNIVERSAL CENTRAL HOST</span
         ></a
