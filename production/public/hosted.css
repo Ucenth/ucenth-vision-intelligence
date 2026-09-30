@@ -55,6 +55,90 @@
 }
 
 /* =========================================================
+   FREE LIMIT NOTIFICATION
+   A native dialog: the same countdown as the header, one close
+   control, no colour-only meaning. Centred, narrow, quiet.
+   ========================================================= */
+.hosted-limit {
+  width: min(92vw, 420px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+.hosted-limit::backdrop {
+  background: rgba(8, 10, 14, 0.62);
+}
+.hosted-limit-body {
+  margin: 0;
+  padding: 30px 30px 26px;
+  display: grid;
+  gap: 14px;
+}
+.hosted-limit .eyebrow {
+  margin: 0;
+}
+.hosted-limit-text {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.2px;
+}
+.hosted-limit-clock {
+  margin: 6px 0 2px;
+  display: grid;
+  gap: 4px;
+}
+.hosted-limit-time {
+  font-size: clamp(38px, 11vw, 48px);
+  line-height: 1;
+  letter-spacing: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.hosted-limit-clock span {
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hosted-limit-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--secondary);
+}
+.hosted-limit-note a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.hosted-limit-close {
+  justify-self: start;
+  min-height: 46px;
+  padding: 0 22px;
+  margin-top: 6px;
+  border: 0;
+  background: var(--text);
+  color: var(--bg, #101112);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.hosted-limit-close:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 3px;
+}
+@media (max-width: 480px) {
+  .hosted-limit-body {
+    padding: 26px 22px 22px;
+  }
+  .hosted-limit-close {
+    justify-self: stretch;
+  }
+}
+
+/* =========================================================
    OPEN SOURCE / EDUCATION
    Editorial: a wide headline block, then the Source Edition
    (left) beside the How To (right), then a thin line of secondary

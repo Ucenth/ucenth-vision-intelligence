@@ -51,6 +51,30 @@ try {
     await page.waitForFunction(() => ["LISTENING", "USER_SPEAKING"].includes(document.querySelector(".voice-panel")?.dataset.state), null, { timeout: 20000 });
     // After the last credit the line switches to the exhaustion wording with the wait time.
     await page.waitForFunction((n) => document.querySelector(".hosted-usage-count")?.textContent === `${n} / 5 requests` && /^Next available in \d\d:\d\d:\d\d$/.test(document.querySelector(".hosted-usage-detail")?.textContent || ""), LIMIT - i, { timeout: 15000 });
+    if (i < LIMIT) assert.equal(await page.locator("dialog.hosted-limit").evaluate((d) => d.open), false, `no limit notification with ${LIMIT - i} remaining`);
+    else {
+      // The fifth success took the last credit: the result is shown, then the notification.
+      await page.waitForFunction(() => document.querySelector("dialog.hosted-limit")?.open === true, null, { timeout: 5000 });
+      assert.match(await page.locator(".identity-name").textContent(), /Blue notebook/, "the fifth result is still shown");
+      assert.match(await page.locator("#hosted-limit-title").textContent(), /^FREE LIMIT REACHED$/);
+      assert.equal(await page.locator("#hosted-limit-text").textContent(), "You've used your 5 free requests.");
+      // The countdown is the server's rolling-window timestamp, formatted HH:MM:SS.
+      const q = await (await page.request.get(`${base}/api/quota`)).json();
+      const shown = await page.locator(".hosted-limit-time").textContent();
+      assert.match(shown, /^\d\d:[0-5]\d:[0-5]\d$/);
+      const [h, m, s] = shown.split(":").map(Number), expected = Math.round((q.nextAt - q.serverTime) / 1000);
+      assert.ok(Math.abs(h * 3600 + m * 60 + s - expected) <= 3, `countdown ${shown} matches the authoritative next-available time (${expected} s)`);
+      const first = await page.locator(".hosted-limit-time").textContent();
+      await page.waitForTimeout(1100);
+      assert.notEqual(await page.locator(".hosted-limit-time").textContent(), first, "the countdown ticks");
+      assert.equal(await page.locator(".hosted-limit-time").textContent(), await page.evaluate(() => document.querySelector(".hosted-usage-detail").textContent.replace("Next available in ", "")), "one timing source with the header");
+      await page.getByRole("button", { name: "Got it" }).click();
+      await page.waitForTimeout(1500);
+      assert.equal(await page.locator("dialog.hosted-limit").evaluate((d) => d.open), false, "closed stays closed");
+      await page.evaluate(() => document.dispatchEvent(new CustomEvent("ucenth:result-presented", { detail: {} })));
+      await page.waitForTimeout(1200);
+      assert.equal(await page.locator("dialog.hosted-limit").evaluate((d) => d.open), false, "a quota re-read at zero does not reopen it");
+    }
     await page.getByRole("button", { name: "Pause", exact: true }).click();
     await page.locator("#reset").click();
   }
@@ -60,6 +84,13 @@ try {
   assert.match(await page.locator(".hosted-usage").getAttribute("aria-label"), /^0 of 5 requests remaining. Next request available in /);
   await page.setViewportSize({ width: 390, height: 844 });
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no overflow at phone width");
+  // The notification at phone width: within the viewport, a touch-sized close control.
+  await page.evaluate(() => document.querySelector("dialog.hosted-limit").showModal());
+  const box = await page.locator("dialog.hosted-limit").boundingBox(), close = await page.getByRole("button", { name: "Got it" }).boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, `dialog within 390 px (${Math.round(box.x)}..${Math.round(box.x + box.width)})`);
+  assert.ok(close.height >= 44, "touch-friendly close control");
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no overflow with the notification open");
+  await page.getByRole("button", { name: "Got it" }).click();
   await page.getByRole("button", { name: "Share Project" }).click();
   await page.waitForFunction(() => document.querySelector(".hosted-share-status")?.textContent);
   assert.match(await page.locator(".hosted-share-status").textContent(), /Link copied|Shared|http/);

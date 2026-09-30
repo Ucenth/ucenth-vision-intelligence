@@ -59,16 +59,48 @@ function paint() {
     usage.setAttribute("aria-label", `${remaining} of ${limit} requests remaining. Next request available in ${spoken(next)}.`);
   }
   usage.dataset.state = remaining === 0 ? "exhausted" : "ok";
+  // The limit notification shows the same authoritative countdown as the header.
+  if (limitDialog.open) limitClock.textContent = next === null ? "00:00:00" : clock(next);
   if (next !== null && next <= 0) refresh();
 }
 async function refresh() {
   try {
     const r = await fetch("/api/quota", { cache: "no-store" });
     if (!r.ok) return;
+    const previous = quota;
     quota = await r.json();
     if (quota.serverTime) skew = quota.serverTime - Date.now();
     paint();
+    // Exactly the moment a successful request takes the last credit: the header went
+    // from one remaining to none. A page that loads already exhausted says nothing
+    // here (the header carries it), and a closed notification stays closed until a
+    // genuinely new exhaustion happens.
+    if (previous && previous.remaining > 0 && quota.remaining === 0 && !quota.paused) openLimit();
   } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Free-limit notification: a native dialog, opened once per exhaustion event.
+// ---------------------------------------------------------------------------
+const limitDialog = document.createElement("dialog");
+limitDialog.className = "hosted-limit";
+limitDialog.setAttribute("aria-labelledby", "hosted-limit-title");
+limitDialog.setAttribute("aria-describedby", "hosted-limit-text");
+limitDialog.innerHTML = `
+  <form method="dialog" class="hosted-limit-body">
+    <p class="eyebrow" id="hosted-limit-title">FREE LIMIT REACHED</p>
+    <p class="hosted-limit-text" id="hosted-limit-text">You've used your <span class="hosted-limit-count"></span> free requests.</p>
+    <p class="hosted-limit-clock" aria-live="off"><time class="hosted-limit-time">00:00:00</time><span>until your next request becomes available</span></p>
+    <p class="hosted-limit-note">In the meantime, you can explore the <a href="/how-to.html">How To guide</a> or <a href="/download/ucenth-vision-intelligence-source.zip" download>download the source code</a>.</p>
+    <button type="submit" class="hosted-limit-close" autofocus>Got it</button>
+  </form>`;
+document.body.append(limitDialog);
+const limitClock = limitDialog.querySelector(".hosted-limit-time");
+function openLimit() {
+  if (limitDialog.open || typeof limitDialog.showModal !== "function") return;
+  limitDialog.querySelector(".hosted-limit-count").textContent = String(quota.limit);
+  paint(); // sets the clock before the first frame is shown
+  limitDialog.showModal();
 }
 refresh();
 setInterval(paint, 1000);
